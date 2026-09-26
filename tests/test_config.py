@@ -166,3 +166,74 @@ def test_a_regex_the_engine_warns_about_is_a_config_error_whatever_the_warning_f
 def test_a_falsy_value_where_a_table_belongs_is_an_error(tmp_path, text):
     with pytest.raises(ConfigError, match="expected a table"):
         make_config(tmp_path, text)
+
+
+@pytest.mark.parametrize("key", ["exclude", "tests"])
+def test_a_bad_glob_error_names_the_key(tmp_path, key):
+    with pytest.raises(ConfigError, match=rf"^{key}: .*negation"):
+        make_config(tmp_path, f"{key} = ['!keep.py']\n")
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["tool = 5\n", "tool = 'indextool'\n", "project = 'x'\n", "project = []\n", "[tool]\nindextool = 5\n"],
+    ids=["tool-int", "tool-str-containing-the-name", "project-str", "project-list", "indextool-not-a-table"],
+)
+def test_a_pyproject_of_an_odd_shape_is_no_config_not_a_crash(repo_factory, tmp_path, text):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "pyproject.toml").write_text(text, encoding="utf-8", newline="\n")
+    cfg = make_config(plain)
+    assert cfg.config_file is None and cfg.title == "" and cfg.roots == (".",)
+    repo = repo_factory({"pyproject.toml": text, "a.py": ""})
+    for source in ("worktree", "index"):
+        cfg = load_config(repo, source=source)
+        assert cfg.config_file is None and cfg.title == "" and cfg.roots == (".",)
+
+
+@pytest.mark.parametrize(
+    "text,fragment",
+    [
+        ("tool = 5\n", r"\[tool\]"),
+        ("tool = 'indextool'\n", r"\[tool\]"),
+        ("[tool]\nindextool = 5\n", r"\[tool\.indextool\]"),
+        ("project = 'x'\n[tool.indextool]\n", r"\[project\]"),
+        ("project = []\n[tool.indextool]\ntitle = 'T'\n", r"\[project\]"),
+    ],
+)
+def test_a_selected_pyproject_with_a_misshapen_section_names_the_section(tmp_path, text, fragment):
+    (tmp_path / "pyproject.toml").write_text(text, encoding="utf-8", newline="\n")
+    with pytest.raises(ConfigError, match=fragment):
+        load_config(tmp_path, explicit=tmp_path / "pyproject.toml")
+    if "[tool.indextool]" in text:  # located, not explicit: same section problem, same error
+        with pytest.raises(ConfigError, match=fragment):
+            load_config(tmp_path)
+
+
+def test_source_index_keeps_a_committed_pyproject_table_that_the_worktree_dropped(repo_factory):
+    repo = repo_factory({"pyproject.toml": '[tool.indextool]\ntitle = "Committed"\n', "a.py": ""})
+    (repo / "pyproject.toml").write_text("[build-system]\nrequires = []\n", encoding="utf-8", newline="\n")
+    from_index = load_config(repo, source="index")
+    assert from_index.title == "Committed"
+    assert from_index.config_file == (repo / "pyproject.toml").resolve()
+    from_worktree = load_config(repo, source="worktree")
+    assert from_worktree.config_file is None and from_worktree.title == ""
+
+
+def test_source_index_ignores_a_pyproject_table_the_worktree_added(repo_factory):
+    repo = repo_factory({"pyproject.toml": "[build-system]\nrequires = []\n", "a.py": ""})
+    (repo / "pyproject.toml").write_text('[tool.indextool]\ntitle = "Edited"\n', encoding="utf-8", newline="\n")
+    from_index = load_config(repo, source="index")
+    assert from_index.config_file is None and from_index.title == ""
+    assert load_config(repo, source="worktree").title == "Edited"
+
+
+def test_source_index_locates_indextool_toml_from_the_index_too(repo_factory):
+    repo = repo_factory({"indextool.toml": 'title = "Committed"\n', "pkg/deep/a.py": ""})
+    (repo / "indextool.toml").unlink()  # deleted in the worktree, still in the index
+    assert load_config(repo / "pkg" / "deep", source="index").title == "Committed"
+    assert load_config(repo / "pkg" / "deep", source="worktree").title == ""
+    repo2 = repo_factory({"a.py": ""}, name="repo2")
+    (repo2 / "indextool.toml").write_text('title = "New"\n', encoding="utf-8", newline="\n")  # never staged
+    assert load_config(repo2, source="index").config_file is None
+    assert load_config(repo2, source="worktree").title == "New"

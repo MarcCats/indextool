@@ -68,23 +68,43 @@ class Config:
         return dict(self.io)
 
 
-def _has_tool_table(path: Path) -> bool:
+def _parse_toml(raw: bytes | None) -> dict | None:
+    """The parsed table, or None when there is no content or it is not valid UTF-8 TOML."""
+    if raw is None:
+        return None
     try:
-        return "indextool" in tomllib.loads(path.read_text(encoding="utf-8")).get("tool", {})
-    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
-        return False
+        return tomllib.loads(raw.decode("utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return None
 
 
-def _locate(start: Path) -> tuple[Path | None, Path]:
+def _indextool_table(data: dict | None) -> dict | None:
+    """`[tool.indextool]` of parsed pyproject content, or None when it is absent or not shaped like a table."""
+    tool = data.get("tool") if data else None
+    table = tool.get("indextool") if isinstance(tool, dict) else None
+    return table if isinstance(table, dict) else None
+
+
+def _config_file_in(directory: Path, source: str) -> Path | None:
+    """The config file `directory` holds in `source` (the working tree or the index), or None."""
+    if source == "index":
+        has_toml = read_file(directory, CONFIG_NAME, source) is not None
+    else:
+        has_toml = (directory / CONFIG_NAME).is_file()
+    if has_toml:
+        return directory / CONFIG_NAME
+    if _indextool_table(_parse_toml(read_file(directory, "pyproject.toml", source))) is not None:
+        return directory / "pyproject.toml"
+    return None
+
+
+def _locate(start: Path, source: str) -> tuple[Path | None, Path]:
     top = gitio.top_level(start) if gitio.in_work_tree(start) else None
     directory = start
     while True:
-        candidate = directory / CONFIG_NAME
-        if candidate.is_file():
-            return candidate, directory
-        pyproject = directory / "pyproject.toml"
-        if pyproject.is_file() and _has_tool_table(pyproject):
-            return pyproject, directory
+        found = _config_file_in(directory, source)
+        if found is not None:
+            return found, directory
         if directory == top or directory.parent == directory:
             break
         directory = directory.parent
@@ -92,13 +112,9 @@ def _locate(start: Path) -> tuple[Path | None, Path]:
 
 
 def _project_name(base: Path, source: str) -> str | None:
-    raw = read_file(base, "pyproject.toml", source)
-    if raw is None:
-        return None
-    try:
-        name = tomllib.loads(raw.decode("utf-8")).get("project", {}).get("name")
-    except (tomllib.TOMLDecodeError, UnicodeDecodeError):
-        return None
+    data = _parse_toml(read_file(base, "pyproject.toml", source))
+    project = data.get("project") if data else None
+    name = project.get("name") if isinstance(project, dict) else None
     return name if isinstance(name, str) else None
 
 
@@ -150,6 +166,13 @@ def _templates(patterns: tuple[str, ...], where: str) -> tuple[str, ...]:
             raise ConfigError(f"{where}: {pattern!r} must contain {TABLES_TOKEN} exactly once")
         _compile(pattern.replace(TABLES_TOKEN, "zz"), where, groups=1)
     return patterns
+
+
+def _globs(patterns: tuple[str, ...], key: str) -> GlobSet:
+    try:
+        return GlobSet(patterns)
+    except ConfigError as exc:
+        raise ConfigError(f"{key}: {exc}") from exc
 
 
 def _known_keys(table: object, allowed: tuple[str, ...] | frozenset[str], where: str) -> dict:
@@ -207,10 +230,11 @@ def load_config(start: Path, explicit: Path | None = None, source: str = "worktr
             raise ConfigError(f"config file {explicit} is outside the repository")
         base = config_file.parent
     else:
-        config_file, base = _locate(start)
+        config_file, base = _locate(start, source)
 
     table: dict = {}
     project_name: str | None = None
+    where = "config"
     untracked = False
     if config_file is not None:
         rel = config_file.name
@@ -222,17 +246,23 @@ def load_config(start: Path, explicit: Path | None = None, source: str = "worktr
         except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
             raise ConfigError(f"{rel}: {exc}") from exc
         if rel == "pyproject.toml":
-            table = data.get("tool", {}).get("indextool", {})
-            name = data.get("project", {}).get("name")
+            tool, project = data.get("tool", {}), data.get("project", {})
+            if not isinstance(tool, dict):
+                raise ConfigError(f"{rel}: [tool] must be a table")
+            if not isinstance(project, dict):
+                raise ConfigError(f"{rel}: [project] must be a table")
+            table = tool.get("indextool", {})
+            where = "[tool.indextool]"
+            name = project.get("name")
             project_name = name if isinstance(name, str) else None
         else:
-            table = data
+            table, where = data, rel
         if gitio.in_work_tree(base):
             untracked = not gitio.is_tracked(base, rel)
     if project_name is None:
         project_name = _project_name(base, source)
 
-    table = _known_keys(table, _TOP_KEYS, config_file.name if config_file else "config")
+    table = _known_keys(table, _TOP_KEYS, where)
     title = table.get("title", "")
     if not isinstance(title, str):
         raise ConfigError("title: expected a string")
@@ -254,8 +284,8 @@ def load_config(start: Path, explicit: Path | None = None, source: str = "worktr
         config_untracked=untracked,
         title=title or (project_name or ""),
         roots=roots,
-        exclude=GlobSet(_string_list(table.get("exclude", []), "exclude")),
-        tests=GlobSet(_string_list(table.get("tests", list(DEFAULT_TESTS)), "tests")),
+        exclude=_globs(_string_list(table.get("exclude", []), "exclude"), "exclude"),
+        tests=_globs(_string_list(table.get("tests", list(DEFAULT_TESTS)), "tests"), "tests"),
         architecture=architecture,
         index=index,
         discovery=discovery,
