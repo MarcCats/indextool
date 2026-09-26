@@ -1,7 +1,10 @@
 """Shared test helpers. Fixtures use invented names only (spec 1.6)."""
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -46,3 +49,18 @@ def make_config(directory: Path, toml_text: str = ""):
     if toml_text:
         (directory / "indextool.toml").write_text(toml_text, encoding="utf-8")
     return load_config(directory)
+
+
+@dataclass
+class Result:
+    code: int
+    out: str
+    err: str
+
+
+def run_cli(cwd: Path, *args: str, env: dict | None = None) -> Result:
+    full_env = {**os.environ, **(env or {})}
+    proc = subprocess.run(
+        [sys.executable, "-m", "indextool", *args], cwd=cwd, env=full_env, capture_output=True
+    )
+    return Result(proc.returncode, proc.stdout.decode("utf-8", "replace"), proc.stderr.decode("utf-8", "replace"))
