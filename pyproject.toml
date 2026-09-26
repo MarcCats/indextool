@@ -27,6 +27,9 @@ indextool = "indextool.cli:main"
 [tool.hatch.version]
 path = "src/indextool/__init__.py"
 
+[tool.hatch.build.targets.sdist]
+exclude = ["docs/superpowers", ".superpowers"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/indextool"]
 

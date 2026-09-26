@@ -1,13 +1,13 @@
+# Tag only a commit on which the CI matrix is green. This workflow tests once, on one Python, and does not re-run
+# the matrix.
 name: release
 on:
   push:
     tags: ["v*"]
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
-      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v4
@@ -21,4 +21,20 @@ jobs:
         run: python scripts/check_patch_release.py "$GITHUB_REF_NAME"
       - run: python -m pytest
       - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1

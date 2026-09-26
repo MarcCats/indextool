@@ -38,6 +38,8 @@ name: architecture-map
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest

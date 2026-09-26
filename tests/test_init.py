@@ -48,6 +48,7 @@ def test_init_creates_everything_in_a_fresh_project(repo_factory):
     workflow = (repo / ".github" / "workflows" / "indextool.yml").read_text(encoding="utf-8")
     assert f'python-version: "{PY}"' in workflow and f'pip install "indextool~={FORMAT_VERSION}.0"' in workflow
     assert "run: indextool verify" in workflow and "working-directory" not in workflow
+    assert "\npermissions:\n  contents: read\njobs:\n" in workflow  # the token can read the repository, nothing more
     attributes = (repo / ".gitattributes").read_text(encoding="utf-8")
     assert "docs/architecture.md text eol=lf" in attributes and "docs/architecture.index.txt text eol=lf" in attributes
     assert (repo / "docs" / "architecture.md").is_file() and (repo / "docs" / "architecture.index.txt").is_file()
