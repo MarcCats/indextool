@@ -53,3 +53,4 @@ Defined in two or more library modules. Check which one a piece of code really i
 - Imports made through `importlib`, `exec` or `sys.path` changes, and anything outside Python source files.
 - Tables that no `CREATE TABLE` statement in a string literal creates (created outside the code, by an ORM, or under a name built at run time).
 - Routes not registered by a decorator named `route`, `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `websocket`, `api_route` with a literal path starting with `/`.
+- A file that cannot be decoded or parsed contributes its raw text (comments and docstrings included) as its only string literal, so SQL-looking text there can count as evidence for tables, their users and writers.

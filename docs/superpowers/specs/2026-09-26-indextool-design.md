@@ -186,7 +186,7 @@ Caps: packages 25; most depended-on modules 25; tables 25; route groups 25 (firs
 
 ### 6.2 Output layout and deltas from the reference
 
-Architecture map sections, in order: numbers, packages, dependency layers, import cycles, most depended-on modules, HTTP surface, database, same name in different modules, what this map cannot say. The index is one header line and then one line per non-test module, sorted by key: `key | first docstring line (90 chars, "-" if none) | lib or standalone + io | tables: a, b* | routes N`, where `*` marks a table the module writes.
+Architecture map sections, in order: numbers, packages, dependency layers, import cycles, most depended-on modules, HTTP surface, database, same name in different modules, what this map cannot say. The index is one header line and then one line per non-test module, sorted by key: `key | first docstring line (90 chars, "-" if none) | lib or standalone + io | tables: a, b* | routes N`, where `*` marks a table the module writes. A title is cut to its width and then stripped of trailing whitespace, in the map and in the index; in the index a `|` in a title is written as `/`, so that the field separator is unambiguous.
 
 Deltas from the reference, each intentional:
 

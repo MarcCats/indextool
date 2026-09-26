@@ -186,3 +186,10 @@ def test_empty_graph():
     assert find_cycles({}) == []
     assert compute_depths({}) == {}
     assert find_duplicate_names({}) == []
+
+
+def test_depths_are_returned_in_key_order_whatever_the_hash_order():
+    keys = [f"m{i:02d}" for i in range(40)]
+    mods = graph_of(*(mk(key, [keys[(i * 7 + 3) % 40]]) for i, key in enumerate(keys)))
+    depths = compute_depths(mods)
+    assert list(depths) == sorted(depths)

@@ -103,7 +103,7 @@ def compute_depths(mods: dict[str, Module]) -> dict[str, int]:
                 depth[node] = 1 + max((depth[d] for d in deps[node] if d in depth), default=-1)
                 active.discard(node)
                 stack.pop()
-    return {k: depth[node_of.get(k, k)] for k in keys}
+    return {k: depth[node_of.get(k, k)] for k in sorted(keys)}
 
 
 def find_duplicate_names(mods: dict[str, Module]) -> list[tuple[str, str, list[str]]]:

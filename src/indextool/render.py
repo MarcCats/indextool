@@ -34,7 +34,12 @@ def _names(keys, limit: int) -> str:
 
 
 def _title(mod: Module) -> str:
-    return mod.doc.strip()[:TITLE_WIDTH]
+    return mod.doc.strip()[:TITLE_WIDTH].rstrip()  # a cut that lands after a space must not leave it at the line end
+
+
+def _index_title(mod: Module) -> str:
+    """The title as one index field: "|" separates the fields, so a title cannot hold one."""
+    return mod.doc.strip().replace("|", "/")[:INDEX_TITLE_WIDTH].rstrip()
 
 
 def _route_detector(cfg: Config) -> str:
@@ -207,6 +212,8 @@ def render_architecture(mods: dict[str, Module], facts: Facts, cfg: Config, excl
         "- Imports made through `importlib`, `exec` or `sys.path` changes, and anything outside Python source files.",
         f"{tables_gap} (created outside the code, by an ORM, or under a name built at run time).",
         f"- Routes not registered by a decorator named {decorators} with a literal path starting with `/`.",
+        "- A file that cannot be decoded or parsed contributes its raw text (comments and docstrings included) as its "
+        "only string literal, so SQL-looking text there can count as evidence for tables, their users and writers.",
     ]
     return "\n".join(out)
 
@@ -224,7 +231,7 @@ def render_index(mods: dict[str, Module], facts: Facts, cfg: Config) -> str:
     ]
     for m in sorted((m for m in mods.values() if not m.is_test), key=lambda m: m.key):
         role = " ".join(p for p in ("lib" if m.key in library else "standalone", facts.io.get(m.key, "")) if p)
-        cells = [m.key, m.doc.strip()[:INDEX_TITLE_WIDTH] or "-", role]
+        cells = [m.key, _index_title(m) or "-", role]
         tables = sorted(per_module.get(m.key, []))
         if tables:
             cells.append(

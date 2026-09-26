@@ -34,8 +34,8 @@ None.
 - `indextool.gitio` (4 importers) - Thin wrappers over the git plumbing commands the tool needs.
 - `indextool.output` (4 importers) - Write and compare the generated files.
 - `indextool.scan` (4 importers) - Parse each discovered file once and keep what the map needs.
-- `indextool.sources` (4 importers) - Decide which files exist and read their content from the working tree 
-- `indextool.facts` (2 importers) - Facts a regex or a decorator can read out of the source with no model 
+- `indextool.sources` (4 importers) - Decide which files exist and read their content from the working tree
+- `indextool.facts` (2 importers) - Facts a regex or a decorator can read out of the source with no model
 - `indextool.globs` (2 importers) - A small gitignore-style matcher, because fnmatch has no `**` and PureP
 - `indextool.pipeline` (2 importers) - Wire scan, graph, facts and render together, and write the results.
 - `indextool.pointer` (2 importers) - The managed pointer block that tells a coding agent where the generate
@@ -59,3 +59,4 @@ None found by this detector.
 - Imports made through `importlib`, `exec` or `sys.path` changes, and anything outside Python source files.
 - Tables that no `CREATE TABLE` statement in a string literal creates (created outside the code, by an ORM, or under a name built at run time).
 - Routes not registered by a decorator named `route`, `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `websocket`, `api_route` with a literal path starting with `/`.
+- A file that cannot be decoded or parsed contributes its raw text (comments and docstrings included) as its only string literal, so SQL-looking text there can count as evidence for tables, their users and writers.

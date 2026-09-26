@@ -71,8 +71,11 @@ cited test does not exist, so this page cannot silently drift from the code.
 | Rule | Pinned by |
 |---|---|
 | The header carries the title and `indextool <major.minor>`; the numbers section counts what it says. | `tests/test_render.py::test_header_and_numbers` |
-| Every capped list of lines ends with a `(+N more)` line (`(+N more tables)`, `(+N more cycles)` and so on). | `tests/test_render.py::test_lists_are_capped_with_a_more_line` |
+| Every capped list of lines ends with a `(+N more)` line (`(+N more packages)`, `(+N more cycles)`, `(+N more route groups)`, `(+N more tables)` and so on), and every capped list of names inside a line ends with `, +N`, with the exact N. | `tests/test_render.py::test_every_cap_prints_its_more_line_and_every_capped_name_list_its_plus_n_with_the_exact_n` |
+| A title is cut to its width (70 characters in the map, 90 in the index) and a cut never leaves trailing whitespace: no line of either file ends in a space. | `tests/test_render.py::test_a_title_cut_at_its_width_never_leaves_trailing_whitespace` |
+| In the index a pipe character in a title is written as `/`, so that the fields stay unambiguous; the map keeps the title as written. | `tests/test_render.py::test_a_pipe_in_an_index_title_is_written_as_a_slash_so_the_fields_stay_unambiguous` |
 | Detector lines and the "cannot say" list come from the active config. | `tests/test_render.py::test_detector_lines_and_cannot_say_reflect_the_config` |
+| The "cannot say" list ends with the unparsable-file caveat: such a file contributes its raw text as its only string literal, so SQL-looking text there can count as evidence. | `tests/test_render.py::test_the_closing_list_states_the_unparsable_file_caveat_whatever_the_config` |
 | The index has one line per non-test module. | `tests/test_render.py::test_index_lines` |
 | The output does not depend on input order. | `tests/test_render.py::test_output_does_not_depend_on_input_order` |
 
