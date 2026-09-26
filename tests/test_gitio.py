@@ -83,3 +83,11 @@ def test_is_tracked_treats_the_path_literally_not_as_a_glob(repo_factory):
     assert gitio.is_tracked(repo, "a1.py") is True
     assert gitio.is_tracked(repo, "a[1].py") is False
     assert gitio.is_tracked(repo, "*.py") is False
+
+
+def test_ignored_returns_the_paths_git_ignores_and_nothing_when_it_cannot_say(repo_factory, tmp_path):
+    repo = repo_factory({".gitignore": "*.log\nbuild/\n", "a.py": "x = 1\n"})
+    assert gitio.ignored(repo, ["a.py", "run.log", "build/out.txt", "docs/notes.md"]) == {"run.log", "build/out.txt"}
+    assert gitio.ignored(repo, ["a.py"]) == set()
+    assert gitio.ignored(repo, []) == set()
+    assert gitio.ignored(tmp_path / "nowhere", ["a.log"]) == set()

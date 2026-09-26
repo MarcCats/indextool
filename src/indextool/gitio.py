@@ -83,3 +83,14 @@ def unstaged(base: Path) -> set[str]:
 
 def is_tracked(base: Path, rel: str) -> bool:
     return bool(_run(["ls-files", "-z", "--", f":(literal){rel}"], base).strip(b"\0"))
+
+
+def ignored(base: Path, rels: list[str]) -> set[str]:
+    """Which of these paths (relative to `base`) git ignores; empty when git cannot say."""
+    if not rels:
+        return set()
+    try:
+        out = _run(["check-ignore", "-z", "--stdin"], base, ("\0".join(rels) + "\0").encode("utf-8"))
+    except GitError:  # exit 1 means that none is ignored; anything else means git could not tell
+        return set()
+    return {p.decode("utf-8", "replace") for p in out.split(b"\0") if p}

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -113,20 +114,48 @@ def _refresh(args: argparse.Namespace) -> int:
     return 0
 
 
+def _from(path: Path, cwd: Path) -> str:
+    """A path as the shell in `cwd` can use it."""
+    try:
+        return Path(os.path.relpath(path, cwd)).as_posix()
+    except ValueError:  # another drive
+        return path.as_posix()
+
+
+def _git_add_line(base: Path, items, cwd: Path) -> str | None:
+    """The command that stages what init wrote, or None when there is nothing to stage. A symlink is staged through
+    the file it points at, and a path git ignores is left out (git add refuses the whole command over one)."""
+    top = gitio.top_level(base)
+    if top is None:
+        return None
+    files: list[Path] = []
+    for item in items:
+        if item.action in ("created", "updated"):
+            real = (base / item.rel).resolve()
+            if top in real.parents and real not in files:
+                files.append(real)
+    skip = gitio.ignored(base, [_from(f, base) for f in files])
+    staged = [f for f in files if _from(f, base) not in skip]
+    return "git add " + " ".join(_from(f, cwd) for f in staged) if staged else None
+
+
 def _init(args: argparse.Namespace) -> int:
     try:
         result = init_command.run(Path.cwd(), dry_run=args.dry_run, hook=args.hook)
     except (ConfigError, gitio.GitError) as exc:
         _warn(str(exc))
         return 2
+    cwd = Path.cwd().resolve()
+    base = result.base or cwd
+    print(f"initialised {_from(base, cwd)}")
     for item in result.items:
-        print(f"  {item.action:<10} {item.rel}" + (f"  ({item.note})" if item.note else ""))
+        print(f"  {item.action:<10} {_from(base / item.rel, cwd)}" + (f"  ({item.note})" if item.note else ""))
     if args.dry_run:
         print("(dry run: nothing was written)")
     else:
-        written = [i.rel for i in result.items if i.action in ("created", "updated")]
-        if written:
-            print("git add " + " ".join(written))
+        line = _git_add_line(base, result.items, cwd)
+        if line:
+            print(line)
     print()
     print(result.precommit)
     return 0

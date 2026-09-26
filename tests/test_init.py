@@ -1,10 +1,12 @@
 import json
+import os
 import re
 import sys
 
 import pytest
 
 from indextool import FORMAT_VERSION
+from indextool import init as init_module
 from indextool.init import merge_hook, render_config, workflow_text
 from indextool.pointer import BEGIN, render_block
 from tests.helpers import commit_all, git, make_config, run_cli, write_files
@@ -303,3 +305,136 @@ def test_a_file_that_is_not_utf8_is_left_alone_with_a_note(repo_factory, rel, ar
     assert result.code == 0, result.err
     assert (repo / rel).read_bytes() == odd
     assert f"skipped    {rel}  (not valid UTF-8; left alone)" in result.out
+
+
+OUR_GROUP = {"hooks": [{"type": "command", "command": "indextool refresh", "timeout": 30}]}
+
+
+@pytest.mark.parametrize(
+    "session", [[{"hooks": None}], [{"hooks": 5}], [5], [None], [{"hooks": {"a": 1}}], [[{"hooks": []}]]]
+)
+def test_merge_hook_keeps_an_entry_of_an_unexpected_shape_and_appends_its_own_group(session):
+    text, outcome = merge_hook(json.dumps({"hooks": {"SessionStart": session}}))
+    assert outcome == "changed"
+    assert json.loads(text)["hooks"]["SessionStart"] == [*session, OUR_GROUP]
+    assert merge_hook(text) == (None, "unchanged")
+
+
+@pytest.mark.parametrize(
+    "settings",
+    ['{"hooks": null}', '{"hooks": []}', '{"hooks": {"SessionStart": {}}}', '{"hooks": {"SessionStart": "x"}}', "[1]", "null"],
+)
+def test_merge_hook_leaves_settings_with_the_wrong_overall_shape_alone(settings):
+    assert merge_hook(settings) == (None, "skipped")
+
+
+def test_settings_with_a_null_hooks_entry_are_merged_not_a_crash(repo_factory):
+    existing = {"permissions": {"allow": ["Bash(git log *)"]}, "hooks": {"SessionStart": [{"hooks": None}]}}
+    repo = repo_factory({**SRC_LAYOUT, ".claude/settings.json": json.dumps(existing)})
+    result = run_cli(repo, "init")
+    assert result.code == 0, result.err
+    settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert settings["permissions"] == existing["permissions"]
+    assert settings["hooks"]["SessionStart"] == [{"hooks": None}, OUR_GROUP]
+    before = snapshot(repo)
+    assert run_cli(repo, "init").code == 0
+    assert snapshot(repo) == before
+
+
+def test_a_symlinked_pointer_file_stays_a_link_and_both_names_show_one_block(repo_factory):
+    repo = repo_factory({**SRC_LAYOUT, "AGENTS.md": "# Agent notes\n"})
+    try:
+        os.symlink("AGENTS.md", repo / "CLAUDE.md")
+    except (OSError, NotImplementedError):
+        pytest.skip("this account cannot create symlinks")
+    result = run_cli(repo, "init")
+    assert result.code == 0, result.err
+    assert (repo / "CLAUDE.md").is_symlink() and not (repo / "AGENTS.md").is_symlink()
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        text = (repo / name).read_text(encoding="utf-8")
+        assert text.startswith("# Agent notes\n") and text.count("<!-- indextool:begin") == 1
+    assert not list(repo.glob("*.tmp"))
+    line = next(ln for ln in result.out.replace("\r\n", "\n").split("\n") if ln.startswith("git add "))
+    git(repo, "add", *line.split()[2:])
+    assert "AGENTS.md" in git(repo, "diff", "--cached", "--name-only")
+
+
+def test_a_symlinked_settings_file_stays_a_link_and_its_target_gets_the_hook(repo_factory):
+    repo = repo_factory({**SRC_LAYOUT, "dotfiles/claude.json": '{"permissions": {}}\n'})
+    (repo / ".claude").mkdir()
+    try:
+        os.symlink(os.path.join("..", "dotfiles", "claude.json"), repo / ".claude" / "settings.json")
+    except (OSError, NotImplementedError):
+        pytest.skip("this account cannot create symlinks")
+    assert run_cli(repo, "init").code == 0
+    assert (repo / ".claude" / "settings.json").is_symlink()
+    target = json.loads((repo / "dotfiles" / "claude.json").read_text(encoding="utf-8"))
+    assert target["hooks"]["SessionStart"] == [OUR_GROUP]
+    assert not list((repo / "dotfiles").glob("*.tmp"))
+
+
+def test_two_names_for_one_file_are_planned_and_written_once(repo_factory, monkeypatch):
+    repo = repo_factory({**SRC_LAYOUT, "CLAUDE.md": "# Notes\n", "AGENTS.md": "# Notes\n"})
+    shared = (repo / "AGENTS.md").resolve()
+    monkeypatch.setattr(
+        init_module, "_real", lambda path: shared if path.name in ("CLAUDE.md", "AGENTS.md") else path.resolve()
+    )
+    written = []
+    real_write = init_module.write_atomic
+    monkeypatch.setattr(init_module, "write_atomic", lambda path, text: (written.append(path), real_write(path, text))[1])
+    result = init_module.run(repo)
+    assert written.count(shared) == 1
+    agents = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert agents.startswith("# Notes\n") and agents.count("<!-- indextool:begin") == 1
+    assert (repo / "CLAUDE.md").read_bytes() == b"# Notes\n"  # the second name is only another way to reach AGENTS.md
+    by_name = {item.rel: item for item in result.items}
+    assert by_name["CLAUDE.md"].action == "updated"
+    assert (by_name["AGENTS.md"].action, by_name["AGENTS.md"].note) == ("unchanged", "same file as CLAUDE.md")
+
+
+def printed_lines(result):
+    return result.out.replace("\r\n", "\n").split("\n")
+
+
+def git_add_tokens(result):
+    line = next(ln for ln in printed_lines(result) if ln.startswith("git add "))
+    return line.split()[2:]
+
+
+def test_every_printed_path_is_relative_to_the_shell_directory(repo_factory):
+    repo = repo_factory({**SRC_LAYOUT, "svc/keep.txt": "x\n"})
+    svc = repo / "svc"
+    result = run_cli(svc, "init")  # no configuration anywhere, so the project is the whole repository
+    assert result.code == 0, result.err
+    assert (repo / "indextool.toml").is_file() and not (svc / "indextool.toml").exists()
+    lines = printed_lines(result)
+    assert lines[0] == "initialised .."
+    item_paths = [ln.split()[1] for ln in lines if ln.startswith("  ") and ln.split()[0] in ("created", "updated")]
+    assert "../indextool.toml" in item_paths and "../AGENTS.md" in item_paths
+    tokens = git_add_tokens(result)
+    assert set(tokens) == set(item_paths)
+    assert all((svc / token).exists() for token in tokens)
+    git(svc, "add", *tokens)  # pasting the printed line works
+    assert "indextool.toml" in git(svc, "diff", "--cached", "--name-only")
+
+
+def test_the_initialised_line_says_dot_when_the_project_is_the_shell_directory(repo_factory):
+    repo = repo_factory(SRC_LAYOUT)
+    assert printed_lines(run_cli(repo, "init", "--dry-run"))[0] == "initialised ."
+
+
+@pytest.mark.parametrize(
+    "extra,args,ignored",
+    [
+        ({}, ("--hook", "local"), ".claude/settings.local.json"),
+        ({".gitignore": "docs/\n"}, (), "docs/architecture.md"),
+    ],
+)
+def test_the_git_add_line_never_lists_an_ignored_path(repo_factory, extra, args, ignored):
+    repo = repo_factory({**SRC_LAYOUT, **extra})
+    result = run_cli(repo, "init", *args)
+    assert result.code == 0, result.err
+    tokens = git_add_tokens(result)
+    assert tokens and ignored not in tokens
+    assert any(ignored in ln for ln in printed_lines(result) if ln.startswith("  "))  # still reported as written
+    git(repo, "add", *tokens)  # git refuses the whole command when it is given an ignored path

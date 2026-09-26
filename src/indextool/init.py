@@ -60,6 +60,7 @@ class Item:
 class InitResult:
     items: tuple[Item, ...]
     precommit: str
+    base: Path | None = None
 
 
 def detect_roots(base: Path) -> list[str]:
@@ -94,7 +95,8 @@ def merge_hook(text: str | None) -> tuple[str | None, str]:
     if not isinstance(session, list):
         return None, "skipped"
     for group in session:
-        for hook in group.get("hooks", []) if isinstance(group, dict) else []:
+        entries = group.get("hooks") if isinstance(group, dict) else None
+        for hook in entries if isinstance(entries, list) else []:  # any other shape is not ours: kept as it is
             if isinstance(hook, dict) and HOOK_COMMAND in str(hook.get("command", "")):
                 return None, "unchanged"
     session.append({"hooks": [{"type": "command", "command": HOOK_COMMAND, "timeout": 30}]})
@@ -131,12 +133,20 @@ def _rel(path: Path, base: Path) -> str:
     return Path(os.path.relpath(path, base)).as_posix()
 
 
+def _real(path: Path) -> Path:
+    """The file a write to this path lands on: a symlink is written through, never replaced."""
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):
+        return path
+
+
 def run(start: Path, *, dry_run: bool = False, hook: str = "shared") -> InitResult:
     cfg = load_config(start)
     base = cfg.base
     top = gitio.top_level(base) or base
     items: list[Item] = []
-    writes: list[tuple[Path, str]] = []
+    writes: dict[Path, tuple[str, str]] = {}  # the file each write lands on -> (its name as the user knows it, text)
 
     def load(path: Path) -> tuple[str | None, bool] | None:
         """_read, or None (and a skipped item) for a file that is not UTF-8: it is left alone."""
@@ -148,12 +158,18 @@ def run(start: Path, *, dry_run: bool = False, hook: str = "shared") -> InitResu
 
     def stage(path: Path, text: str | None, crlf: bool = False, note: str = "") -> None:
         """Plan a write. Text is LF here; a file that used CRLF keeps it, and an unchanged file (text None) is not
-        rewritten."""
-        if text is None:
-            items.append(Item(_rel(path, base), "unchanged", note))
+        rewritten. The write goes to the file a symlink points at, and a file reachable under two names is planned
+        once."""
+        rel = _rel(path, base)
+        real = _real(path)
+        if real in writes:
+            items.append(Item(rel, "unchanged", f"same file as {writes[real][0]}"))
             return
-        items.append(Item(_rel(path, base), "updated" if path.exists() else "created", note))
-        writes.append((path, text.replace("\n", "\r\n") if crlf else text))
+        if text is None:
+            items.append(Item(rel, "unchanged", note))
+            return
+        items.append(Item(rel, "updated" if real.exists() else "created", note))
+        writes[real] = (rel, text.replace("\n", "\r\n") if crlf else text)
 
     if cfg.config_file is not None:
         items.append(Item(_rel(cfg.config_file, base), "skipped", "configuration already present"))
@@ -212,14 +228,14 @@ def run(start: Path, *, dry_run: bool = False, hook: str = "shared") -> InitResu
         stage(attributes, None if updated == original else updated, crlf)
 
     if not dry_run:
-        for path, text in writes:
+        for real, (rel, text) in writes.items():
             try:
-                write_atomic(path, text)
+                write_atomic(real, text)
             except OSError as exc:
-                raise ConfigError(f"cannot write {_rel(path, base)}: {exc}") from exc
+                raise ConfigError(f"cannot write {rel}: {exc}") from exc
         for rel, action, _size in sync_files(load_config(base), "worktree"):
             items.append(Item(rel, action, "generated"))
     else:
         items.append(Item(cfg.architecture, "planned", "generated after setup"))
         items.append(Item(cfg.index, "planned", "generated after setup"))
-    return InitResult(items=tuple(items), precommit=PRECOMMIT_SNIPPET)
+    return InitResult(items=tuple(items), precommit=PRECOMMIT_SNIPPET, base=base)
