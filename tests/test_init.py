@@ -466,7 +466,7 @@ def test_the_written_title_is_the_folder_name_of_the_base_directory_without_a_py
 
 
 def test_the_written_title_is_a_toml_string_whatever_the_name_holds():
-    for name in ('say "hi"', "back\slash", "café", "tab\there"):
+    for name in ('say "hi"', "back\\slash", "café", "tab\there"):
         assert tomllib.loads(render_config(["."], name))["title"] == name
     assert "title" not in tomllib.loads(render_config(["."], ""))
 
