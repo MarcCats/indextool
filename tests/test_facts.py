@@ -44,6 +44,17 @@ def test_docstrings_and_comments_are_not_evidence_and_fstrings_count(tmp_path):
     assert facts.writers == {"real_one": {"a", "c"}}
 
 
+def test_an_unparsable_file_contributes_its_raw_text_so_sql_in_a_comment_or_docstring_counts(tmp_path):
+    files = {
+        "a.py": 'X = "CREATE TABLE real_one (id INTEGER)"\n',
+        "broken.py": "def broken(:\n# CREATE TABLE ghost (id INTEGER)\n'''INSERT INTO real_one VALUES (1)'''\n",
+    }
+    facts = facts_of(tmp_path, files)
+    assert facts.created == {"real_one", "ghost"}
+    assert facts.writers == {"real_one": {"a", "broken"}, "ghost": {"broken"}}
+    assert facts.io["broken"] == ""
+
+
 def test_similar_table_names_are_not_confused(tmp_path):
     files = {
         "a.py": 'A = "CREATE TABLE orders (id INT)"\nB = "CREATE TABLE orders_archive (id INT)"\nC = "INSERT INTO orders_archive VALUES (1)"\n',

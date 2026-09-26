@@ -63,6 +63,10 @@ def test_imports_agents():
         ({"CLAUDE.md": "x\n", "AGENTS.md": "y\n"}, ["CLAUDE.md", "AGENTS.md"]),
         ({"CLAUDE.md": "@AGENTS.md\n", "AGENTS.md": "y\n"}, ["AGENTS.md"]),
         ({"CLAUDE.md": "@AGENTS.md\n"}, ["CLAUDE.md"]),
+        ({".claude/CLAUDE.md": "@AGENTS.md\n", "AGENTS.md": "y\n"}, ["AGENTS.md"]),
+        ({".claude/CLAUDE.md": "@AGENTS.md\n"}, [".claude/CLAUDE.md"]),
+        ({"CLAUDE.md": "x\n", ".claude/CLAUDE.md": "@AGENTS.md\n", "AGENTS.md": "y\n"}, ["AGENTS.md"]),
+        ({"CLAUDE.md": "x\n", ".claude/CLAUDE.md": "@AGENTS.md\n"}, ["CLAUDE.md", ".claude/CLAUDE.md"]),
     ],
 )
 def test_placement(tmp_path, files, expected):

@@ -6,7 +6,8 @@ which fails the build the moment it does.
 indextool reads your source with the standard library, writes an architecture map and a one-line-per-module index,
 and gives your coding agent a short pointer to them. There is no service, no model call and no dependency beyond
 Python's standard library. Python only, and it describes structure, not intent: imports, dependency layers, cycles,
-routes, tables and their writers, look-alike names. It cannot see why a module exists, and it cannot see imports made
+routes, tables and their writers, look-alike names. Routes and tables are found only where a configured detector
+matches; nothing outside the detectors is seen. It cannot see why a module exists, and it cannot see imports made
 through `importlib`.
 
 ```
@@ -28,11 +29,13 @@ hook, a GitHub Actions workflow and `.gitattributes` lines, then generates the t
 for what it wrote. It never overwrites an existing config or workflow, and `--dry-run` shows what it would do without
 writing anything.
 
-The pointer block goes into `AGENTS.md` (created when no instruction file exists), or into every existing file among
-`CLAUDE.md`, `.claude/CLAUDE.md` and `AGENTS.md`; when `CLAUDE.md` imports `@AGENTS.md`, only into `AGENTS.md`. Running
-`init` again refreshes the managed blocks it finds, keeps CRLF files CRLF, writes through symlinks and prints paths
-relative to your current directory. Markers inside fenced code and prose mentions of them are ignored; unpaired or
-duplicate markers are refused, and `verify` exits 2 on them.
+The pointer block goes into `AGENTS.md`, which `init` creates when no instruction file exists. When `AGENTS.md` exists
+and `CLAUDE.md` or `.claude/CLAUDE.md` imports it (a line reading `@AGENTS.md`), the block goes only into `AGENTS.md`.
+In every other case it goes into every existing file among `CLAUDE.md`, `.claude/CLAUDE.md` and `AGENTS.md`, so an
+import of an `AGENTS.md` that does not exist redirects nothing: the block goes into the importing file. Running `init`
+again refreshes the managed blocks it finds, keeps CRLF files CRLF, writes through symlinks and prints paths relative
+to your current directory. Markers inside fenced code and prose mentions of them are ignored; unpaired or duplicate
+markers are refused, and `verify` exits 2 on them.
 
 ## Commands
 
@@ -53,8 +56,9 @@ committed version.
 The output is a pure function of the files it reads (in a git work tree, the tracked ones), the config, the tool's
 `major.minor` and the Python `major.minor`. Folder name, working directory, time, hash seed, locale and line endings do
 not change a byte. In a git work tree, files that git does not track are never part of the map. A file that cannot be
-parsed is counted, not skipped. Because syntax trees differ between Python versions, run `verify` in CI on the same
-Python `major.minor` that generated the files.
+decoded or parsed is counted, not skipped, and its raw text, comments included, still feeds the table detectors. Because
+syntax trees differ between Python versions, run `verify` in CI on the same Python `major.minor` that generated the
+files.
 
 ## Configuration
 

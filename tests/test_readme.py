@@ -14,6 +14,9 @@ def test_limits_are_stated_up_front():
     assert "Python only" in top
     assert "structure, not intent" in top
     assert "importlib" in README
+    flat = " ".join(top.split())  # the README wraps its lines; the clause must hold wherever the wrap falls
+    assert "only where a configured detector matches" in flat
+    assert "nothing outside the detectors is seen" in flat
 
 
 def test_no_token_saving_figure_is_advertised():

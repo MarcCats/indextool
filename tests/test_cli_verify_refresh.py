@@ -1,7 +1,10 @@
 import os
 
+import pytest
+
+from indextool.pointer import render_block
 from tests.fixture_repos import TINY
-from tests.helpers import commit_all, git, run_cli
+from tests.helpers import commit_all, git, make_config, run_cli, write_files
 
 MAPS = ("docs/architecture.md", "docs/architecture.index.txt")
 
@@ -83,6 +86,48 @@ def test_an_unstaged_edit_warns_in_worktree_mode(repo_factory):
     result = run_cli(repo, "verify")
     assert result.code == 0
     assert "unstaged changes" in result.err and "shop/ledger.py" in result.err
+
+
+def committed_with_config_and_pointer(repo_factory, pointer_file):
+    """A committed, current repository whose committed config and pointer file are both up to date."""
+    repo = repo_factory({**TINY, "indextool.toml": 'title = "Shop"\n'})
+    assert run_cli(repo, "generate").code == 0
+    write_files(repo, {pointer_file: render_block(make_config(repo)) + "\n"})
+    commit_all(repo, "add maps and pointer")
+    clean = run_cli(repo, "verify")
+    assert clean.code == 0 and "unstaged" not in clean.err, clean.out + clean.err
+    return repo
+
+
+def test_an_unstaged_edit_of_the_config_warns_in_worktree_mode(repo_factory):
+    repo = committed_repo(repo_factory, {**TINY, "indextool.toml": 'title = "Shop"\n'})
+    config = repo / "indextool.toml"
+    config.write_bytes(config.read_bytes() + b"# a note that changes no output\n")
+    result = run_cli(repo, "verify")
+    assert result.code == 0, result.out + result.err
+    assert "unstaged changes" in result.err and "indextool.toml" in result.err
+
+
+@pytest.mark.parametrize("pointer_file", ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"])
+def test_an_unstaged_edit_of_a_pointer_file_warns_in_worktree_mode(repo_factory, pointer_file):
+    repo = committed_with_config_and_pointer(repo_factory, pointer_file)
+    path = repo / pointer_file
+    path.write_bytes(path.read_bytes() + b"\nA note added after the managed block.\n")
+    result = run_cli(repo, "verify")
+    assert result.code == 0, result.out + result.err  # the block itself is unchanged, so only the warning appears
+    assert "unstaged changes" in result.err and pointer_file in result.err
+
+
+def test_source_index_never_warns_about_unstaged_config_or_pointer_edits(repo_factory):
+    repo = committed_with_config_and_pointer(repo_factory, "AGENTS.md")
+    for rel in ("indextool.toml", "AGENTS.md"):
+        path = repo / rel
+        path.write_bytes(path.read_bytes() + b"\n# an unstaged note\n")
+    worktree = run_cli(repo, "verify")
+    assert worktree.code == 0 and "2 tracked file(s) have unstaged changes" in worktree.err  # both files are watched
+    result = run_cli(repo, "verify", "--source", "index")
+    assert result.code == 0, result.out + result.err
+    assert "unstaged" not in result.err
 
 
 def test_verify_works_from_a_subdirectory(repo_factory):

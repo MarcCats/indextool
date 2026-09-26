@@ -40,7 +40,7 @@ cited test does not exist, so this page cannot silently drift from the code.
 | A test module matches a `tests` pattern and appears only in the module count. | `tests/test_scan.py::test_test_modules_follow_the_tests_patterns` |
 | Absolute, relative and submodule imports resolve to the longest known repository module; the rest are dropped. | `tests/test_scan.py::test_edges_absolute_relative_and_submodule_imports` |
 | Function-level and conditional imports are edges. | `tests/test_scan.py::test_function_level_and_conditional_imports_are_edges` |
-| A file that cannot be parsed is a module with no imports, and is counted. | `tests/test_scan.py::test_unparsable_files_are_counted_modules_with_only_their_raw_text` |
+| A file that cannot be decoded or parsed is a module with no imports, and is counted. Its raw text, comments and docstrings included, is its only string literal. | `tests/test_scan.py::test_unparsable_files_are_counted_modules_with_only_their_raw_text` |
 | The title is the first non-empty docstring line; lines are split on `\n` only. | `tests/test_scan.py::test_a_docstring_with_a_form_feed_and_u2028_stays_one_line` |
 
 ## Graph
@@ -59,7 +59,8 @@ cited test does not exist, so this page cannot silently drift from the code.
 | Rule | Pinned by |
 |---|---|
 | Tables, users and writers come from `CREATE TABLE` in string literals. | `tests/test_facts.py::test_created_tables_users_and_writers` |
-| Docstrings and comments are not evidence; f-string values stand in as `?`. | `tests/test_facts.py::test_docstrings_and_comments_are_not_evidence_and_fstrings_count` |
+| In a file that parses, docstrings and comments are not evidence; f-string values stand in as `?`. | `tests/test_facts.py::test_docstrings_and_comments_are_not_evidence_and_fstrings_count` |
+| A file that cannot be decoded or parsed contributes its raw text as its only literal, so SQL-looking text in its comments or docstrings can count as evidence for tables, their users and writers. It gets no IO rating and no routes. | `tests/test_facts.py::test_an_unparsable_file_contributes_its_raw_text_so_sql_in_a_comment_or_docstring_counts` |
 | Table names are escaped and matched longest first. | `tests/test_facts.py::test_custom_create_pattern_and_table_names_are_escaped` |
 | Test modules contribute no facts. | `tests/test_facts.py::test_test_modules_contribute_nothing` |
 | A route is a listed decorator call with a literal first argument starting with `/`. | `tests/test_scan.py::test_routes_require_a_listed_decorator_and_a_literal_path_starting_with_a_slash` |
@@ -87,7 +88,7 @@ cited test does not exist, so this page cannot silently drift from the code.
 | `verify` fails on drift and says how to fix it. | `tests/test_cli_verify_refresh.py::test_verify_fails_when_an_import_changes_and_says_how_to_fix_it` |
 | `verify` accepts CRLF in the committed map. | `tests/test_cli_verify_refresh.py::test_verify_accepts_crlf_line_endings_in_the_committed_map` |
 | `verify --source index` checks what would be committed. | `tests/test_cli_verify_refresh.py::test_index_source_checks_what_would_be_committed` |
-| In worktree mode `verify` warns on stderr, without changing its exit code, when files it reads have unstaged changes: CI would see the committed version. The warning watches the tracked Python files, the config and the pointer files. | `tests/test_cli_verify_refresh.py::test_an_unstaged_edit_warns_in_worktree_mode` |
+| In worktree mode `verify` warns on stderr, without changing its exit code, when files it reads have unstaged changes: CI would see the committed version. The warning watches the tracked Python files, the config and the pointer files (`CLAUDE.md`, `.claude/CLAUDE.md`, `AGENTS.md`). Under `--source index` it never appears. | `tests/test_cli_verify_refresh.py::test_an_unstaged_edit_warns_in_worktree_mode`, `tests/test_cli_verify_refresh.py::test_an_unstaged_edit_of_the_config_warns_in_worktree_mode`, `tests/test_cli_verify_refresh.py::test_an_unstaged_edit_of_a_pointer_file_warns_in_worktree_mode` and `tests/test_cli_verify_refresh.py::test_source_index_never_warns_about_unstaged_config_or_pointer_edits` |
 | An untracked config makes `verify` exit 2, naming it. | `tests/test_cli_verify_refresh.py::test_verify_names_an_untracked_config_and_exits_2` |
 | `refresh` is silent, fails open and never replaces a good map with an empty one. | `tests/test_cli_verify_refresh.py::test_refresh_never_replaces_a_good_map_with_an_empty_one` |
 | A hand-edited pointer block makes `verify` exit 2. | `tests/test_pointer.py::test_verify_exits_2_when_a_block_was_edited_by_hand` |
@@ -96,7 +97,7 @@ cited test does not exist, so this page cannot silently drift from the code.
 
 | Rule | Pinned by |
 |---|---|
-| The pointer goes into `AGENTS.md` when no instruction file exists or `CLAUDE.md` imports `@AGENTS.md`; otherwise into every existing one of `CLAUDE.md`, `.claude/CLAUDE.md` and `AGENTS.md`. | `tests/test_pointer.py::test_placement` |
+| The pointer goes into `AGENTS.md` when no instruction file exists. When `AGENTS.md` exists and `CLAUDE.md` or `.claude/CLAUDE.md` imports it (a line reading `@AGENTS.md`), the block goes only into `AGENTS.md`. Otherwise it goes into every existing one of `CLAUDE.md`, `.claude/CLAUDE.md` and `AGENTS.md`; an import of an `AGENTS.md` that does not exist redirects nothing, so the block goes into the importing file. | `tests/test_pointer.py::test_placement` |
 | A marker counts only as a whole line outside fenced code: a prose mention or a quoted example is not a block. | `tests/test_pointer.py::test_a_prose_mention_of_the_markers_is_not_a_block` and `tests/test_pointer.py::test_a_fenced_example_is_skipped_in_favour_of_the_real_block` |
 | Unpaired or duplicate markers are refused, never guessed at: `init` writes nothing and `verify` exits 2 without touching the file. | `tests/test_pointer.py::test_upsert_refuses_an_unpaired_marker_and_returns_nothing_to_write`, `tests/test_pointer.py::test_upsert_refuses_a_second_block` and `tests/test_pointer.py::test_verify_exits_2_on_an_unpaired_marker_and_leaves_the_file_alone` |
 | `init` never overwrites an existing config or workflow. | `tests/test_init.py::test_existing_config_is_never_overwritten` and `tests/test_init.py::test_the_workflow_is_not_overwritten` |
@@ -123,4 +124,7 @@ map states this in its closing section, built from the active configuration.
 - `written by` includes the module that creates a table, so migration and backfill scripts appear in it.
 - A list of names inside one line (the modules at a depth, the members of a cycle, the writers or readers of a table,
   the files holding routes) shows only the first few and ends with `, +N` for the rest.
+- A file that cannot be decoded or parsed is read as raw text, so an `INSERT INTO` in its comments or docstrings can make
+  it a writer of a table, and a `CREATE TABLE` there can add a table. The map counts these files ("could not be
+  parsed"); check that count before trusting a table's writers.
 - Counts are exact; a module's role is inferred from its name and title only.

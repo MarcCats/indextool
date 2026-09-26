@@ -36,7 +36,10 @@ and empty patterns are errors.
 ## Detectors
 
 Detectors are data. Nothing executes your code: decorators and imports come from the syntax tree, and regexes run only
-over string literals (never docstrings).
+over string literals, never over docstrings or comments. The one exception is a file that cannot be decoded or parsed:
+its raw text, comments and docstrings included, is its only literal, so SQL-looking text in it can count as evidence for
+tables, their users and writers. Such a file gets no routes and no IO rating, and the map counts it as "could not be
+parsed".
 
 ```toml
 [routes]
@@ -66,4 +69,5 @@ Giving a key replaces that key's default entirely; keys you leave out keep their
 - **SQL.** `create` has exactly one capture group, the table name. `use` and `write` contain `@TABLES@` exactly once and
   have exactly one capture group, the table name; `@TABLES@` is replaced by the created names, each escaped, longest
   first. `write_any` has no placeholder. `CREATE TEMP TABLE` is deliberately not counted by `create`: a temporary table
-  is session-scoped, not schema.
+  is session-scoped, not schema. In a file that cannot be parsed, `create`, `use` and `write` run over its whole raw
+  text (see above).
