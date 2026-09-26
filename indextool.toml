@@ -1,0 +1,4 @@
+# indextool configuration. Every key is optional; see the indextool documentation for the full list.
+roots = ["src"]
+architecture = "docs/architecture.md"
+index = "docs/architecture.index.txt"

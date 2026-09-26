@@ -1,1 +1,3 @@
 tests/golden/* text eol=lf
+docs/architecture.md text eol=lf
+docs/architecture.index.txt text eol=lf

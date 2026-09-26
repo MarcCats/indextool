@@ -1,0 +1,18 @@
+# indextool 0.1 index, one line per module, fields split by a pipe: key, first docstring line, role, tables, routes. Role: `lib` (another module imports it) or `standalone` (nothing does), then the io the code shows. Tables ending in * are ones the module writes.
+indextool | indextool: a derived, verified architecture map for Python repositories. | lib
+indextool.__main__ | - | standalone
+indextool.cli | Command line: argument parsing, exit codes, and nothing else. | lib
+indextool.config | Locate, load, validate and normalize configuration. Detectors are data, never code. | lib
+indextool.decode | Turn source bytes into text without ever consulting the locale. | lib
+indextool.errors | - | lib
+indextool.facts | Facts a regex or a decorator can read out of the source with no model in the loop. | lib
+indextool.gitio | Thin wrappers over the git plumbing commands the tool needs. | lib
+indextool.globs | A small gitignore-style matcher, because fnmatch has no `**` and PurePath.match is not rec | lib
+indextool.graph | Graph rules over module records: who imports whom, depth, cycles, look-alike names. | lib
+indextool.init | Idempotent project setup: config, pointer, hook, CI workflow, .gitattributes. It edits onl | lib
+indextool.output | Write and compare the generated files. | lib
+indextool.pipeline | Wire scan, graph, facts and render together, and write the results. | lib
+indextool.pointer | The managed pointer block that tells a coding agent where the generated files are and how  | lib
+indextool.render | Render the architecture map and the module index. Pure functions: no I/O. | lib
+indextool.scan | Parse each discovered file once and keep what the map needs. | lib
+indextool.sources | Decide which files exist and read their content from the working tree or the git index. | lib

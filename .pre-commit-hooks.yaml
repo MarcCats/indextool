@@ -1,0 +1,7 @@
+- id: indextool-verify
+  name: indextool verify
+  description: Fail the commit when the committed architecture map is stale.
+  entry: indextool verify --source index
+  language: python
+  pass_filenames: false
+  always_run: true

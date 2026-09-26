@@ -1,0 +1,24 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build -e ".[dev]"
+      - name: Tag matches __version__, and a patch release is output-neutral
+        run: python scripts/check_patch_release.py "$GITHUB_REF_NAME"
+      - run: python -m pytest
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
