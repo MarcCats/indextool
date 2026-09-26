@@ -182,7 +182,7 @@ Detectors are data, never plugins. Nothing executes user code. Decorators and im
 | Route | Per section 5.3. |
 | Look-alike | A public top-level class name or top-level `UPPER_CASE` name bound to a dict, list, tuple or set literal, defined in two or more library modules. |
 
-Caps: most depended-on modules 25; tables 25; route groups 25 (first three path segments); cycles 10 (largest first, 8 names each); look-alike names 20; modules named per depth 6; writers named per table 4. The index never truncates.
+Caps: packages 25; most depended-on modules 25; tables 25; route groups 25 (first three path segments); route files 25; cycles 10 (largest first, 8 names each); look-alike names 20; modules named per depth 6; writers named per table 4; readers named per table 4. Every capped list ends with a "(+N more)" line. The index never truncates.
 
 ### 6.2 Output layout and deltas from the reference
 
@@ -199,6 +199,7 @@ Deltas from the reference, each intentional:
 7. Each detector-based section states its detector in one line, prints "none found by this detector" instead of vanishing, and "what this map cannot say" is generated from the active config.
 8. The excluded-file count and the unparsable-file count are printed.
 9. The unused `lazy` field is not carried over.
+10. The package list and the route-file list are capped at 25, and the most-depended-on list gets a "(+N more)" line, so that every list obeys section 4, rule 6. The reference left the first two uncapped and gave the third no such line; outputs with fewer than 25 entries are unaffected.
 
 ## 7. Delivery
 
@@ -304,7 +305,7 @@ Open items, each with the point at which it is resolved:
 2. The pointer wording trial (gate 5).
 3. Each prior-art description in the README is checked against its source before publishing; the PDF's descriptions are not yet verified.
 4. `indextool` was free on PyPI on 2026-09-26 (not a reservation); the GitHub repository name has not been checked.
-5. The copyright holder line for the MIT `LICENSE`, and confirmation that code derived from the private repository may be open-sourced.
+5. Confirmation that code derived from the private repository may be open-sourced. (The MIT `LICENSE` copyright holder is Marc Cats, decided 2026-09-26.)
 6. Whether `write_any` reproduces the reference's `db-rw` ratings exactly is settled by the parity gate.
 
 ## 11. Decision log
