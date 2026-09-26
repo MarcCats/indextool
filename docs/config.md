@@ -5,12 +5,13 @@ git, up to the filesystem root). In each directory it tries `indextool.toml` fir
 `pyproject.toml`; the first directory that has either is the base directory. With no config at all, the defaults apply
 and the base directory is the git top level, or the working directory outside git. `--config PATH` overrides the search;
 inside a git repository the path must be inside it. Relative paths in the config resolve against the base directory,
-never the working directory. Unknown keys, invalid regexes, nested roots and other mistakes are errors that name the key
-(exit code 2).
+never the working directory. Unknown keys, invalid regexes, nested roots and other mistakes are errors that name the key:
+`generate`, `verify` and `init` exit 2, while `refresh`, which always fails open, reports the error on stderr and exits 0.
 
 In git mode the config file must be tracked, or `verify` exits 2 naming it (`generate` and `refresh` only warn). Under
 `--source index` the config is read from the index as well, so a config that was never staged is simply not found: the
-defaults apply and nothing is reported.
+defaults apply and nothing is reported. With `--config PATH` and `--source index` there is no such fallback: a config
+file that was never staged is an error, `not present in the index` (exit 2).
 
 In `pyproject.toml` the same keys are nested under `[tool.indextool]`.
 
@@ -18,12 +19,12 @@ In `pyproject.toml` the same keys are nested under `[tool.indextool]`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `title` | `[project].name` of the base directory's `pyproject.toml`, else none | Shown as `# Architecture map: <title>`. The folder name is never used. |
-| `roots` | `["."]` | Source roots. Module keys are paths under a root. Roots must not nest or repeat, so `"."` cannot be combined with another root. `init` writes `["src"]` when `src/` holds Python files. |
-| `exclude` | `[]` | Glob patterns for files to leave out. When the key is set, the number of files removed is printed in the map. |
+| `title` | `[project].name` of the base directory's `pyproject.toml`, else none | Shown as `# Architecture map: <title>`. Without a `title` the tool never uses the folder name. `init` writes a `title` into the config it creates (the project name, else the folder name), so the folder name is recorded once, in the committed file. |
+| `roots` | `["."]` | Source roots. Module keys are paths under a root. Files outside every configured root are not part of the map, and are not counted as excluded: with `roots = ["src"]`, `scripts/` and `setup.py` are left out. Roots must not nest or repeat, so `"."` cannot be combined with another root. `init` writes `["src"]` when `src/` holds Python files. |
+| `exclude` | `[]` | Glob patterns for files to leave out. When the effective list is not empty, the map prints how many files it removed; `exclude = []` prints nothing. |
 | `tests` | `["test_*.py", "*_test.py", "tests/", "test/"]` | Glob patterns for test modules. |
-| `architecture` | `"docs/architecture.md"` | Where the map is written. A relative path inside the repository. |
-| `index` | `"docs/architecture.index.txt"` | Where the index is written. A relative path inside the repository, and not the same file as `architecture`. |
+| `architecture` | `"docs/architecture.md"` | Where the map is written. A relative path inside the repository. It must not name a source or config file (a path ending in `.py`, or `indextool.toml` or `pyproject.toml` in any directory and any case): every `generate` and `refresh` rewrites it. |
+| `index` | `"docs/architecture.index.txt"` | Where the index is written. A relative path inside the repository, not the same file as `architecture`, and subject to the same rule about source and config files. |
 | `discovery` | `"auto"` | `auto`: git when inside a work tree, else a directory walk. `git` and `walk` force one; `git` needs a work tree, and `walk` cannot be combined with `--source index`. |
 
 ## Glob patterns

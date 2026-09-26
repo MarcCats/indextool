@@ -12,7 +12,8 @@ schema and update its dependents").
 **Measure.** Tokens after the first turn and the tool-call count, from the transcript; wrong claims per overview,
 counted by a blind grader with a fixed rubric; pass or fail on the edits.
 
-**Bar.** Overview: at least 15% fewer tokens at no loss of accuracy. Trivial edit: no more than 5% extra cost.
+**Bar.** Decide the bar before the trial; these figures are examples, not thresholds. Overview: at least 15% fewer
+tokens at no loss of accuracy. Trivial edit: no more than 5% extra cost.
 Lookup: expect no change.
 
 **Report both directions.** A result that misses the bar is still a result. If the overview bar is missed but the

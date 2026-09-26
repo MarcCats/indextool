@@ -1,7 +1,9 @@
 # What indextool computes
 
-Every rule below is pinned by a test, named in the right-hand column. `scripts/check_doc_tests.py` fails CI when a
-cited test does not exist, so this page cannot silently drift from the code.
+Every rule in the tables below names, in the right-hand column, the test that pins it. The two prose sections after the
+tables ("What the map cannot see" and "Reading traps") describe limits and cite a test only where one pins the claim.
+`scripts/check_doc_tests.py` fails CI when a cited test does not exist, so this page cannot silently drift from the
+code.
 
 ## Which files are read
 
@@ -41,7 +43,7 @@ cited test does not exist, so this page cannot silently drift from the code.
 | A test module matches a `tests` pattern and appears only in the module count. | `tests/test_scan.py::test_test_modules_follow_the_tests_patterns` |
 | Absolute, relative and submodule imports resolve to the longest known repository module; the rest are dropped. | `tests/test_scan.py::test_edges_absolute_relative_and_submodule_imports` |
 | Function-level and conditional imports are edges. | `tests/test_scan.py::test_function_level_and_conditional_imports_are_edges` |
-| A file that cannot be decoded or parsed is a module with no imports, and is counted. Its raw text, comments and docstrings included, is its only string literal. | `tests/test_scan.py::test_unparsable_files_are_counted_modules_with_only_their_raw_text` |
+| A file that cannot be decoded or parsed is a module with no imports, and is counted. Its raw text, comments and docstrings included, is its only string literal. A test module that cannot be parsed is counted too but contributes nothing (see [Test modules contribute no facts](#tables-routes-and-io)). | `tests/test_scan.py::test_unparsable_files_are_counted_modules_with_only_their_raw_text` |
 | The title is the first non-empty docstring line; lines are split on `\n` only. | `tests/test_scan.py::test_a_docstring_with_a_form_feed_and_u2028_stays_one_line` |
 
 ## Graph
@@ -61,9 +63,9 @@ cited test does not exist, so this page cannot silently drift from the code.
 |---|---|
 | Tables, users and writers come from `CREATE TABLE` in string literals. | `tests/test_facts.py::test_created_tables_users_and_writers` |
 | In a file that parses, docstrings and comments are not evidence; f-string values stand in as `?`. | `tests/test_facts.py::test_docstrings_and_comments_are_not_evidence_and_fstrings_count` |
-| A file that cannot be decoded or parsed contributes its raw text as its only literal, so SQL-looking text in its comments or docstrings can count as evidence for tables, their users and writers. It gets no IO rating and no routes. | `tests/test_facts.py::test_an_unparsable_file_contributes_its_raw_text_so_sql_in_a_comment_or_docstring_counts` |
+| A file that cannot be decoded or parsed contributes its raw text as its only literal, so SQL-looking text in its comments or docstrings can count as evidence for tables, their users and writers. It gets no IO rating and no routes. This holds for a file that is not a test module; an unparsable test module contributes nothing, as the "Test modules contribute no facts" row of this table says. | `tests/test_facts.py::test_an_unparsable_file_contributes_its_raw_text_so_sql_in_a_comment_or_docstring_counts` |
 | Table names are escaped and matched longest first. | `tests/test_facts.py::test_custom_create_pattern_and_table_names_are_escaped` |
-| Test modules contribute no facts. | `tests/test_facts.py::test_test_modules_contribute_nothing` |
+| Test modules contribute no facts, so an unparsable test module (still counted as "could not be parsed") adds no table, writer, route or IO rating from its raw text. | `tests/test_facts.py::test_test_modules_contribute_nothing` and `tests/test_facts.py::test_an_unparsable_test_module_contributes_nothing` |
 | A route is a listed decorator call with a literal first argument starting with `/`. | `tests/test_scan.py::test_routes_require_a_listed_decorator_and_a_literal_path_starting_with_a_slash` |
 | The IO rating comes from imports matched by dotted prefix; SQL text alone is not evidence. | `tests/test_facts.py::test_io_rating` |
 
@@ -127,8 +129,9 @@ cited test does not exist, so this page cannot silently drift from the code.
 
 Why a module exists, how modules cooperate beyond importing each other, formulas and thresholds, imports made through
 `importlib`, `exec` or `sys.path` changes, tables not created by a matching `CREATE TABLE` in a string literal, routes
-not registered by a listed decorator with a literal `/` path, and anything that is not Python source. Every generated
-map states this in its closing section, built from the active configuration.
+not registered by a listed decorator with a literal `/` path, and anything that is not Python source. A file that cannot
+be decoded or parsed is read as raw text, which the map also says. Every generated map states this in its closing
+section, built from the active configuration.
 
 ## Reading traps
 
@@ -138,9 +141,11 @@ map states this in its closing section, built from the active configuration.
 - A standalone module with routes may not be mounted; check how the server registers it.
 - Table rank is breadth (how many modules mention the table), not importance.
 - `written by` includes the module that creates a table, so migration and backfill scripts appear in it.
-- A list of names inside one line (the modules at a depth, the members of a cycle, the writers or readers of a table,
-  the files holding routes) shows only the first few and ends with `, +N` for the rest.
+- A list of names inside one line shows only its first names and ends with `, +N` for the rest: 6 modules per depth, 8
+  members per cycle or look-alike name, 4 writers and 4 readers per table, 25 files holding routes (pinned by
+  `tests/test_render.py::test_every_cap_prints_its_more_line_and_every_capped_name_list_its_plus_n_with_the_exact_n`).
 - A file that cannot be decoded or parsed is read as raw text, so an `INSERT INTO` in its comments or docstrings can make
   it a writer of a table, and a `CREATE TABLE` there can add a table. The map counts these files ("could not be
-  parsed"); check that count before trusting a table's writers.
+  parsed") and its closing list says so; check that count before trusting a table's writers. A test module that cannot
+  be parsed is counted too, but as a test module it contributes nothing.
 - Counts are exact; a module's role is inferred from its name and title only.

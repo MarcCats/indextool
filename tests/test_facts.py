@@ -75,6 +75,16 @@ def test_test_modules_contribute_nothing(tmp_path):
     assert "test_a" not in facts.io
 
 
+def test_an_unparsable_test_module_contributes_nothing(tmp_path):
+    files = {
+        "a.py": 'X = "CREATE TABLE t1 (id INTEGER)"\n',
+        "test_broken.py": "def broken(:\n# CREATE TABLE ghost (id INTEGER)\n'''INSERT INTO t1 VALUES (1)'''\n",
+    }
+    facts = facts_of(tmp_path, files)
+    assert facts.created == {"t1"} and facts.writers == {"t1": {"a"}} and facts.routes == {}
+    assert "test_broken" not in facts.io
+
+
 def test_custom_create_pattern_and_table_names_are_escaped(tmp_path):
     toml = r"""
 [sql]

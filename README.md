@@ -7,8 +7,8 @@ indextool reads your source with the standard library, writes an architecture ma
 and gives your coding agent a short pointer to them. There is no service, no model call and no dependency beyond
 Python's standard library. Python only, and it describes structure, not intent: imports, dependency layers, cycles,
 routes, tables and their writers, look-alike names. Routes and tables are found only where a configured detector
-matches; nothing outside the detectors is seen. It cannot see why a module exists, and it cannot see imports made
-through `importlib`.
+matches; no route or table outside the detectors is seen. It cannot see why a module exists, and it cannot see imports
+made through `importlib`.
 
 ```
 your repository -> indextool generate -> docs/architecture.md, docs/architecture.index.txt
@@ -27,7 +27,8 @@ git add -A && git commit -m "Adopt indextool"
 `init` writes `indextool.toml`, a managed pointer block in your agent instruction files, a Claude Code SessionStart
 hook, a GitHub Actions workflow and `.gitattributes` lines, then generates the two files and prints the `git add` line
 for what it wrote. It never overwrites an existing config or workflow, and `--dry-run` shows what it would do without
-writing anything.
+writing anything. When it adds the hook it rewrites `.claude/settings.json` with two-space JSON indentation, so a file
+that was formatted differently is reformatted (its content is kept).
 
 The pointer block goes into `AGENTS.md`, which `init` creates when no instruction file exists. When `AGENTS.md` exists
 and `CLAUDE.md` or `.claude/CLAUDE.md` imports it (a line reading `@AGENTS.md`), the block goes only into `AGENTS.md`.
@@ -42,7 +43,7 @@ markers are refused, and `verify` exits 2 on them.
 | Command | What it does |
 |---|---|
 | `indextool generate` | Write the map and the index. |
-| `indextool verify` | Exit 0 when both committed files are current, 1 on drift, 2 on misconfiguration. |
+| `indextool verify` | Exit 0 when both committed files are current, 1 on drift, 2 on misconfiguration, which includes a stale or malformed managed pointer block. |
 | `indextool refresh` | Silent, fail-open regeneration for a session-start hook. |
 | `indextool init` | One-time setup, safe to re-run. |
 
