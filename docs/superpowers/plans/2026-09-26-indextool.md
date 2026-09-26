@@ -23,7 +23,8 @@ Every task's requirements implicitly include these, copied from the spec.
 - Git is used only to decide which files exist and, in index mode, to supply their content. Untracked files are never part of the map in git mode.
 - Public-content rule (spec 1.6): nothing specific to the private reference project may appear in any file, fixture, golden, example or commit message. All fixtures use invented names (for example `shop`, `orders`, `ledger`, `billing`). The local guard hook installed in Task 1 enforces this.
 - Package and command name `indextool`; license MIT with the copyright line `Copyright (c) 2026 Marc Cats`.
-- Commit messages end with the trailer `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` (pass it as a second `-m`).
+- Commit messages end with a `Co-Authored-By: <model> <noreply@anthropic.com>` trailer (pass it as a second `-m`) that names the model that actually authored the commit. The commands in this plan show `Claude Sonnet 5`; an implementer running on a different model substitutes its own name, and the controller states the exact line in each dispatch.
+- Parity is private. `tests/test_parity.py` runs against the synthetic strings in that file only. The comparison against the private reference repository is a manual, local step of the release gate (Task 17, Step 2). Never add the reference's outputs, its parity config or any diff of them to this repository: not as goldens, fixtures, examples or documentation, however helpful that might look.
 - Commands assume Git Bash on Windows and the virtualenv interpreter `.venv/Scripts/python`; on macOS or Linux use `.venv/bin/python`.
 
 ## Review Focus
@@ -86,7 +87,7 @@ alone. The spec's module table still describes the responsibilities; only the fi
 - [ ] **Step 1: Confirm the private-term list exists**
 
 Run: `test -s ~/.indextool-private-terms && echo present`
-Expected: `present`. If it prints nothing, stop and ask the human partner for the terms (project, company and product names, folder names, distinctive identifiers of the private reference project), one extended regular expression per line; blank lines and lines starting with `#` are ignored; matching is case-insensitive. This file lives outside the repository and its contents must never be written into any tracked file, including this plan.
+Expected: `present`. The file is generated from the private reference repository by its own generator (every module key, table, route and class name it emits, plus hand-chosen terms), never written from memory: one extended regular expression per line; blank lines and lines starting with `#` are ignored; matching is case-insensitive. If it is missing, stop and tell the human partner; do not write it yourself. This file lives outside the repository and its contents must never be written into any tracked file, including this plan. A companion `~/.indextool-private-terms.full` holds the unfiltered extraction and is not read by the hooks.
 
 - [ ] **Step 2: Install the local guard hooks**
 
@@ -100,12 +101,14 @@ if [ ! -s "$terms" ]; then
   echo "indextool guard: term list missing or empty: $terms" >&2
   exit 1
 fi
-pattern=$(grep -v -E '^[[:space:]]*(#|$)' "$terms" | paste -sd'|' -)
-if [ -z "$pattern" ]; then
+clean=$(mktemp)
+trap 'rm -f "$clean"' EXIT
+grep -v -E '^[[:space:]]*(#|$)' "$terms" > "$clean"
+if [ ! -s "$clean" ]; then
   echo "indextool guard: no terms in $terms" >&2
   exit 1
 fi
-if git diff --cached -U0 --no-color | grep -n -i -E -e "$pattern" >&2; then
+if git diff --cached -U0 --no-color | grep -n -i -E -f "$clean" >&2; then
   echo "indextool guard: the staged changes contain a private term; commit refused" >&2
   exit 1
 fi
@@ -119,8 +122,10 @@ if [ ! -s "$terms" ]; then
   echo "indextool guard: term list missing or empty: $terms" >&2
   exit 1
 fi
-pattern=$(grep -v -E '^[[:space:]]*(#|$)' "$terms" | paste -sd'|' -)
-if [ -n "$pattern" ] && grep -n -i -E -e "$pattern" "$1" >&2; then
+clean=$(mktemp)
+trap 'rm -f "$clean"' EXIT
+grep -v -E '^[[:space:]]*(#|$)' "$terms" > "$clean"
+if [ -s "$clean" ] && grep -n -i -E -f "$clean" "$1" >&2; then
   echo "indextool guard: the commit message contains a private term; commit refused" >&2
   exit 1
 fi
@@ -4964,7 +4969,7 @@ From this point, any change under `src/` must be followed by `python -m indextoo
 
 **Interfaces:**
 - Produces (`scripts/check_doc_tests.py`): `missing_citations(doc_text: str, root: Path) -> list[str]` (citations of the form `` `tests/<file>.py::<test_name>` `` whose file or `def <test_name>(` does not exist under `root`); `main() -> int` checking `docs/rules.md`, exit 1 when any citation is dangling.
-- Produces (`scripts/parity.py`): `reduce(kind: str, text: str) -> list[str]` (the lines that remain after the allowed categories are removed; `kind` is `"map"` or `"index"`); `main(argv: list[str]) -> int` for `python scripts/parity.py {map|index} EXPECTED ACTUAL`, exit 0 when the reduced texts are identical, 1 otherwise, printing the differing lines.
+- Produces (`scripts/parity.py`): `reduce(kind: str, text: str) -> list[str]` (the lines that remain after the allowed categories are removed; `kind` is `"map"` or `"index"`); `main(argv: list[str]) -> int` for `python scripts/parity.py {map|index} EXPECTED ACTUAL`, exit 0 when the reduced texts are identical, 1 otherwise, printing the differing lines. The script and its public test are generic and synthetic; the parity run against the private reference repository is a manual, local step (Task 17, Step 2) and its outputs never enter this repository.
 
 Allowed categories (spec 8.2, gate 2): for a map, its first three lines (title, blank line, intro), every line from the `## What this` heading to the end, every `Detector:` line, every `None found by this detector.` line, and the excluded-file and unparsable-file count lines; for an index, its first line. The script is generic: it names no project.
 
@@ -5542,7 +5547,7 @@ These are the spec's acceptance gates 2 to 5 (spec 8.2) plus publication hygiene
 
 - [ ] **Step 1: Push and get the matrix green.** Create the GitHub repository, push `main`, and open a pull request from a trivial branch so every job runs, including the golden bump gate. Expected: all three operating systems and all four Python versions pass, including the portable golden and the PEP 701 fixture, and the self-hosted `verify` job. If the portable golden differs between Python minors, the tool's output depends on the interpreter for code that parses everywhere: add the Python `major.minor` to the header in `render.py`, regenerate the goldens, bump the minor version, and record the finding in the changelog. This is the empirical answer to spec open item 1.
 
-- [ ] **Step 2: Gate 2, parity on the private reference repository (run privately).** In the private reference repository, regenerate the reference generator's map and index fresh (never read the committed generated files, which can predate the generator's last edit). Write a parity config outside this repository that sets `roots` to the reference's source folder, `decorators = ["route"]`, and the reference's IO libraries with a top-level `urllib` entry; run `indextool generate` against the same commit with that config. Then run `python scripts/parity.py map <reference-map> <indextool-map>` and `python scripts/parity.py index <reference-index> <indextool-index>`. Expected: exit 0 for both. Any line that differs outside the allowed categories is a real difference: decide whether it is a bug in indextool or an intended change, and if it is intended add it to spec 6.2 as a delta. Keep the config, the outputs and the diff out of this repository; the release notes say only that parity was verified on a private repository of several hundred modules.
+- [ ] **Step 2: Gate 2, parity on the private reference repository (run privately).** In the private reference repository, regenerate the reference generator's map and index fresh (never read the committed generated files, which can predate the generator's last edit). Write a parity config outside this repository that sets `roots` to the reference's source folder, `decorators = ["route"]`, and the reference's IO libraries with a top-level `urllib` entry; run `indextool generate` against the same commit with that config. Then run `python scripts/parity.py map <reference-map> <indextool-map>` and `python scripts/parity.py index <reference-index> <indextool-index>`. Expected: exit 0 for both. Any line that differs outside the allowed categories is a real difference: decide whether it is a bug in indextool or an intended change, and if it is intended add it to spec 6.2 as a delta. This step is manual and local, and no executor of this plan performs it: the public repository's own `tests/test_parity.py` covers `scripts/parity.py` with synthetic strings only. Keep the config, the outputs and the diff out of this repository, and never turn them into goldens or fixtures; the release notes say only that parity was verified on a private repository of several hundred modules.
 
 - [ ] **Step 3: Gate 3, cold start on three public repositories** with different layouts: a `src/` layout, a flat layout, and a monorepo with two configs. On each, start a stopwatch and run `pip install indextool` (from the built wheel or the index), `indextool init`, commit, push and see the workflow's `verify` job go green; then change one import, push, and see it fail. Expected: under 15 minutes each. Note any friction in `init` output or documentation and fix it.
 
@@ -5554,10 +5559,13 @@ These are the spec's acceptance gates 2 to 5 (spec 8.2) plus publication hygiene
 
 ```bash
 cd /c/python/indextool
-pattern=$(grep -v -E '^[[:space:]]*(#|$)' ~/.indextool-private-terms | paste -sd'|' -)
-git grep -n -i -E -e "$pattern" $(git rev-list --all); echo "exit=$? (1 means no matches)"
-git log --all --format=%B | grep -n -i -E -e "$pattern"; echo "exit=$?"
+clean=$(mktemp)
+grep -v -E '^[[:space:]]*(#|$)' ~/.indextool-private-terms > "$clean"
+git grep -n -i -E -f "$clean" $(git rev-list --all); echo "exit=$? (1 means no matches)"
+git grep -n -i -E -f "$clean"; echo "working tree exit=$?"
+git log --all --format=%B | grep -n -i -E -f "$clean"; echo "exit=$?"
+rm -f "$clean"
 ```
-Expected: both print `exit=1`. Then confirm the `LICENSE` copyright line reads as the owner wants it, that the owner has confirmed that code derived from the private repository may be open-sourced, that `indextool` is still free on PyPI and the GitHub name is available, and configure PyPI trusted publishing for the `pypi` environment used by `release.yml`. Publish by pushing a `v0.1.0` tag.
+Expected: all three print `exit=1`. Then confirm the `LICENSE` copyright line reads as the owner wants it, that the owner has confirmed that code derived from the private repository may be open-sourced, that `indextool` is still free on PyPI and the GitHub name is available, and configure PyPI trusted publishing for the `pypi` environment used by `release.yml`. Publish by pushing a `v0.1.0` tag.
 
 ---
