@@ -37,3 +37,12 @@ def make_repo(parent: Path, files: dict, name: str = "repo", commit: bool = True
     if commit:
         commit_all(repo)
     return repo
+
+
+def make_config(directory: Path, toml_text: str = ""):
+    from indextool.config import load_config
+
+    directory.mkdir(parents=True, exist_ok=True)
+    if toml_text:
+        (directory / "indextool.toml").write_text(toml_text, encoding="utf-8")
+    return load_config(directory)
