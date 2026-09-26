@@ -24,7 +24,9 @@ def library_modules(mods: dict[str, Module]) -> set[str]:
 
 
 def find_cycles(mods: dict[str, Module]) -> list[list[str]]:
-    """Strongly connected components with more than one module (iterative Tarjan)."""
+    """Import cycles: strongly connected components of two or more non-test modules (iterative Tarjan). Test modules
+    are not part of the graph, so a cycle that only closes through a test module is not reported."""
+    mods = {key: mod for key, mod in mods.items() if not mod.is_test}
     index: dict[str, int] = {}
     low: dict[str, int] = {}
     on_stack: set[str] = set()
@@ -78,8 +80,7 @@ def compute_depths(mods: dict[str, Module]) -> dict[str, int]:
     """Depth of every non-test module: 0 when it imports no other module here, otherwise one more than the deepest
     module it imports. Modules in an import cycle share one depth. Tests are not part of the graph."""
     keys = {k for k, m in mods.items() if not m.is_test}
-    cycles = find_cycles({k: mods[k] for k in keys})  # cycles among non-test modules only
-    node_of = {k: ("cycle", i) for i, comp in enumerate(cycles) for k in comp}
+    node_of = {k: ("cycle", i) for i, comp in enumerate(find_cycles(mods)) for k in comp}
     deps: dict = {}
     for k in sorted(keys):
         node = node_of.get(k, k)

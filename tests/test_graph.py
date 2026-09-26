@@ -100,11 +100,16 @@ def test_large_cycle_is_one_component_and_shares_a_depth():
     assert depths["app"] == 2 and depths["base"] == 0
 
 
-def test_cycle_containing_a_test_module_does_not_change_library_depths():
-    # a <-> t where t is a test: the SCC is reported, but the non-test graph has no cycle
+def test_cycle_containing_a_test_module_is_not_a_cycle_and_does_not_change_library_depths():
+    # a <-> t where t is a test: cycles are over non-test modules only, so there is none
     mods = graph_of(mk("a", ["t"]), mk("t", ["a"], is_test=True), mk("b", ["a"]))
-    assert find_cycles(mods) == [["a", "t"]]
+    assert find_cycles(mods) == []
     assert compute_depths(mods) == {"a": 0, "b": 1}
+
+
+def test_two_test_modules_importing_each_other_are_not_a_cycle():
+    mods = graph_of(mk("test_a", ["test_b"], is_test=True), mk("test_b", ["test_a"], is_test=True), mk("lib"))
+    assert find_cycles(mods) == []
 
 
 def test_self_import_is_not_a_cycle_and_does_not_add_depth():
