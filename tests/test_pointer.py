@@ -1,5 +1,6 @@
 import pytest
 
+from indextool.errors import ConfigError
 from indextool.pointer import BEGIN, CANDIDATES, END, check_pointers, imports_agents, render_block, targets, upsert
 from tests.fixture_repos import TINY
 from tests.helpers import commit_all, make_config, run_cli, write_files
@@ -114,3 +115,103 @@ def test_a_pointer_problem_wins_over_drift(repo_factory):
 
 def test_candidates_are_the_files_agents_read():
     assert CANDIDATES == ("CLAUDE.md", ".claude/CLAUDE.md", "AGENTS.md")
+
+
+@pytest.mark.parametrize(
+    "text,line",
+    [
+        (f"intro\n\n{BEGIN}\nUSER CONTENT ONE\nUSER CONTENT TWO\n", 3),
+        (f"intro\n\nUSER CONTENT ONE\n{END}\nUSER CONTENT TWO\n", 4),
+        (f"{BEGIN}\nUSER CONTENT ONE\n{BEGIN}\nUSER CONTENT TWO\n{END}\n", 1),
+    ],
+)
+def test_upsert_refuses_an_unpaired_marker_and_returns_nothing_to_write(tmp_path, text, line):
+    block = render_block(make_config(tmp_path))
+    for _ in range(2):
+        with pytest.raises(ConfigError, match=f"unpaired indextool marker at line {line}"):
+            upsert(text, block)
+    assert "USER CONTENT ONE" in text and "USER CONTENT TWO" in text
+
+
+def test_upsert_refuses_a_second_block(tmp_path):
+    block = render_block(make_config(tmp_path))
+    with pytest.raises(ConfigError, match="more than one managed pointer block at line 7"):
+        upsert(block + "\n\n" + block + "\n", block)
+
+
+def test_a_prose_mention_of_the_markers_is_not_a_block(tmp_path):
+    block = render_block(make_config(tmp_path))
+    sentence = "The block runs from `<!-- indextool:begin -->` to `<!-- indextool:end -->` in this file.\n"
+    fixed, changed = upsert(sentence, block)
+    assert changed and fixed == sentence + "\n" + block + "\n"
+    again, changed = upsert(fixed, block)
+    assert not changed and again == fixed
+
+
+@pytest.mark.parametrize("fence", ["```", "~~~"])
+def test_a_fenced_example_is_skipped_in_favour_of_the_real_block(tmp_path, fence):
+    block = render_block(make_config(tmp_path))
+    stale = block.replace("Read it whole", "Read it")
+    example = f"Example:\n\n{fence}markdown\n{block}\n{fence}\n\n"
+    fixed, changed = upsert(example + stale + "\n\nafter\n", block)
+    assert changed and fixed == example + block + "\n\nafter\n"
+    again, changed = upsert(fixed, block)
+    assert not changed and again == fixed
+    current = example.replace("Read it whole", "Read it") + block + "\n"
+    kept, changed = upsert(current, block)
+    assert not changed and kept == current
+
+
+def test_markers_only_inside_a_fence_mean_no_block(tmp_path):
+    block = render_block(make_config(tmp_path))
+    text = f"```\n{block}\n```\n"
+    fixed, changed = upsert(text, block)
+    assert changed and fixed == text + "\n" + block + "\n"
+
+
+def test_an_unclosed_fence_is_refused_rather_than_appended_to_again_and_again(tmp_path):
+    block = render_block(make_config(tmp_path))
+    with pytest.raises(ConfigError, match="unclosed code fence at line 3"):
+        upsert("notes\n\n```python\nprint(1)\n", block)
+
+
+def test_check_pointers_reports_unpaired_markers_and_a_second_block(repo_factory):
+    repo = repo_factory(TINY)
+    cfg = make_config(repo)
+    block = render_block(cfg)
+    write_files(repo, {"CLAUDE.md": block + "\n\n" + block + "\n", "AGENTS.md": f"# Notes\n\n{BEGIN}\nUSER CONTENT\n"})
+    problems, found = check_pointers(cfg, "worktree")
+    assert found is True
+    assert problems == [
+        "CLAUDE.md: more than one managed pointer block at line 7; fix the markers by hand, then run: indextool init",
+        "AGENTS.md: unpaired indextool marker at line 3; fix the markers by hand, then run: indextool init",
+    ]
+
+
+def test_check_pointers_skips_fenced_examples(repo_factory):
+    repo = repo_factory(TINY)
+    cfg = make_config(repo)
+    block = render_block(cfg)
+    stale = block.replace("Read it whole", "Read it")
+    write_files(repo, {"CLAUDE.md": f"```\n{block}\n```\n", "AGENTS.md": f"```\n{stale}\n```\n\n{block}\n"})
+    assert check_pointers(cfg, "worktree") == ([], True)
+    write_files(repo, {"AGENTS.md": f"```\n{block}\n```\n\n{stale}\n"})
+    assert check_pointers(cfg, "worktree") == (
+        ["AGENTS.md: the managed pointer block is out of date; run: indextool init"],
+        True,
+    )
+    write_files(repo, {"CLAUDE.md": "text\n\n```\nunclosed\n", "AGENTS.md": "plain\n"})
+    assert check_pointers(cfg, "worktree") == ([], False)
+
+
+def test_verify_exits_2_on_an_unpaired_marker_and_leaves_the_file_alone(repo_factory):
+    repo = repo_factory(TINY)
+    assert run_cli(repo, "generate").code == 0
+    original = f"# Notes\n\n{BEGIN}\nUSER CONTENT ONE\nUSER CONTENT TWO\n"
+    write_files(repo, {"AGENTS.md": original})
+    commit_all(repo)
+    result = run_cli(repo, "verify")
+    assert result.code == 2
+    assert "AGENTS.md: unpaired indextool marker at line 3" in result.out
+    assert "no managed pointer block" not in result.err
+    assert (repo / "AGENTS.md").read_bytes() == original.encode("utf-8")
