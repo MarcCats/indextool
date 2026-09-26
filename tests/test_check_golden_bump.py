@@ -40,3 +40,103 @@ def test_main_flags_an_unbumped_golden_change_and_accepts_a_bumped_one(repo_fact
 
 def test_main_needs_a_base_ref():
     assert load().main(["check"]) == 2
+
+
+def put(repo, rel, text):
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+    return path
+
+
+def branch_from_main(repo):
+    """A repository with the golden at 0.1 on main, and a feature branch checked out from that point."""
+    git(repo, "checkout", "-q", "-b", "feature")
+
+
+def test_a_base_that_advanced_with_its_own_bump_does_not_hide_an_unbumped_change(repo_factory, monkeypatch, capsys):
+    m = load()
+    repo = repo_factory({"tests/golden/g.md": OLD})
+    branch_from_main(repo)  # branched BEFORE main moves
+    git(repo, "checkout", "-q", "main")
+    put(repo, "tests/golden/g.md", OLD.replace("0.1", "0.2"))
+    commit_all(repo, "main bumps to 0.2 on its own")
+    git(repo, "checkout", "-q", "feature")
+    put(repo, "tests/golden/g.md", OLD.replace("body", "changed"))
+    commit_all(repo, "feature changes the body at 0.1")
+    monkeypatch.chdir(repo)
+    assert m.main(["check", "main"]) == 1
+    assert "tests/golden/g.md" in capsys.readouterr().out
+
+
+def test_the_gate_works_from_a_subdirectory(repo_factory, monkeypatch, capsys):
+    m = load()
+    repo = repo_factory({"tests/golden/g.md": OLD})
+    branch_from_main(repo)
+    put(repo, "tests/golden/g.md", OLD.replace("body", "changed"))
+    commit_all(repo, "change without a bump")
+    monkeypatch.chdir(repo / "tests")
+    assert m.main(["check", "main"]) == 1
+    assert "tests/golden/g.md" in capsys.readouterr().out
+    monkeypatch.chdir(repo / "tests" / "golden")
+    assert m.main(["check", "main"]) == 1
+
+
+def test_only_the_committed_head_counts_never_the_working_tree(repo_factory, monkeypatch):
+    m = load()
+    repo = repo_factory({"tests/golden/g.md": OLD})
+    branch_from_main(repo)
+    put(repo, "tests/golden/g.md", OLD.replace("body", "changed"))  # uncommitted, unbumped
+    monkeypatch.chdir(repo)
+    assert m.main(["check", "main"]) == 0
+    commit_all(repo, "commit the unbumped change")
+    put(repo, "tests/golden/g.md", OLD.replace("0.1", "0.2").replace("body", "changed"))  # uncommitted bump
+    assert m.main(["check", "main"]) == 1
+
+
+def test_an_unresolvable_base_ref_is_a_clear_message_and_exit_2(repo_factory, monkeypatch, capsys):
+    m = load()
+    repo = repo_factory({"tests/golden/g.md": OLD})
+    monkeypatch.chdir(repo)
+    assert m.main(["check", "no-such-ref"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert len(captured.err.strip().split("\n")) == 1 and "no-such-ref" in captured.err
+
+
+def test_no_merge_base_is_exit_2_and_mentions_fetch_depth(repo_factory, monkeypatch, capsys):
+    m = load()
+    repo = repo_factory({"tests/golden/g.md": OLD})
+    git(repo, "checkout", "-q", "--orphan", "unrelated")  # shares no history with main, as in a shallow clone
+    put(repo, "tests/golden/g.md", OLD.replace("body", "changed"))
+    commit_all(repo, "unrelated history")
+    monkeypatch.chdir(repo)
+    assert m.main(["check", "main"]) == 2
+    err = capsys.readouterr().err
+    assert len(err.strip().split("\n")) == 1 and "fetch-depth: 0" in err
+
+
+def test_outside_a_git_repository_is_exit_2(tmp_path, monkeypatch, capsys):
+    m = load()
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(plain)
+    assert m.main(["check", "main"]) == 2
+    assert len(capsys.readouterr().err.strip().split("\n")) == 1
+
+
+def test_a_new_golden_a_deleted_golden_and_a_renamed_golden_need_no_bump(repo_factory, monkeypatch):
+    m = load()
+    repo = repo_factory({"tests/golden/g.md": OLD, "tests/golden/gone.md": OLD, "tests/golden/old_name.md": OLD})
+    branch_from_main(repo)
+    put(repo, "tests/golden/new.md", OLD.replace("body", "brand new"))
+    monkeypatch.chdir(repo)
+    commit_all(repo, "add a golden")
+    assert m.main(["check", "main"]) == 0
+    (repo / "tests" / "golden" / "gone.md").unlink()
+    commit_all(repo, "delete a golden")
+    assert m.main(["check", "main"]) == 0
+    git(repo, "mv", "tests/golden/old_name.md", "tests/golden/new_name.md")
+    put(repo, "tests/golden/new_name.md", OLD.replace("body", "renamed and edited"))
+    commit_all(repo, "rename and edit: a delete plus an add")
+    assert m.main(["check", "main"]) == 0
