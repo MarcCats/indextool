@@ -90,3 +90,14 @@ def test_an_output_path_that_is_a_directory_is_a_one_line_error_and_leaves_no_te
     assert result.code == 2 and "Traceback" not in result.err
     assert result.err.startswith("indextool: cannot write map") and result.err.count("\n") == 1
     assert [p.name for p in repo.iterdir() if p.name.endswith(".tmp")] == []
+
+
+def test_an_output_path_that_names_a_source_file_is_a_one_line_error_and_the_file_is_untouched(repo_factory):
+    repo = repo_factory({**TINY, "setup.py": "# my setup\n", "indextool.toml": 'index = "setup.py"\n'})
+    for command in ("generate", "verify"):
+        result = run_cli(repo, command)
+        assert result.code == 2 and "Traceback" not in result.err
+        assert result.err.startswith("indextool: index: 'setup.py' would overwrite a source or config file") and result.err.count("\n") == 1
+    assert (repo / "setup.py").read_bytes() == b"# my setup\n"
+    refresh = run_cli(repo, "refresh")
+    assert refresh.code == 0 and "would overwrite" in refresh.err and (repo / "setup.py").read_bytes() == b"# my setup\n"

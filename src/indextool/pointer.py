@@ -126,11 +126,11 @@ def targets(base: Path) -> list[str]:
     return existing
 
 
-def check_pointers(cfg: Config, source: str) -> tuple[list[str], bool]:
-    """(problems, found_any_block): every managed block that differs from what the config renders is a problem."""
+def pointer_states(cfg: Config, source: str) -> list[tuple[str, str, str]]:
+    """(file, state, detail) for each candidate file that holds a managed block or broken markers in `source`. The
+    state is "current" (equal to what the config renders), "stale" or "broken" (the detail says what is wrong)."""
     block = render_block(cfg)
-    problems: list[str] = []
-    found = False
+    states: list[tuple[str, str, str]] = []
     for rel in CANDIDATES:
         raw = read_file(cfg.base, rel, source)
         if raw is None:
@@ -139,12 +139,20 @@ def check_pointers(cfg: Config, source: str) -> tuple[list[str], bool]:
         try:
             span, _unclosed = _scan(text)
         except ConfigError as exc:
-            found = True
-            problems.append(f"{rel}: {exc}; fix the markers by hand, then run: indextool init")
+            states.append((rel, "broken", str(exc)))
             continue
-        if not span:
-            continue
-        found = True
-        if text[span[0] : span[1]] != block:
+        if span:
+            states.append((rel, "current" if text[span[0] : span[1]] == block else "stale", ""))
+    return states
+
+
+def check_pointers(cfg: Config, source: str) -> tuple[list[str], bool]:
+    """(problems, found_any_block): every managed block that differs from what the config renders is a problem."""
+    problems: list[str] = []
+    states = pointer_states(cfg, source)
+    for rel, state, detail in states:
+        if state == "broken":
+            problems.append(f"{rel}: {detail}; fix the markers by hand, then run: indextool init")
+        elif state == "stale":
             problems.append(f"{rel}: the managed pointer block is out of date; run: indextool init")
-    return problems, found
+    return problems, bool(states)

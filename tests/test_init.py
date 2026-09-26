@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+import tomllib
 
 import pytest
 
@@ -32,7 +33,13 @@ def test_init_creates_everything_in_a_fresh_project(repo_factory):
     repo = repo_factory(SRC_LAYOUT)
     result = run_cli(repo, "init")
     assert result.code == 0, result.err
-    assert 'roots = ["src"]' in (repo / "indextool.toml").read_text(encoding="utf-8")
+    assert (repo / "indextool.toml").read_bytes().decode("utf-8") == (
+        "# indextool configuration. Every key is optional; see the indextool documentation for the full list.\n"
+        'title = "repo"\n'
+        'roots = ["src"]\n'
+        'architecture = "docs/architecture.md"\n'
+        'index = "docs/architecture.index.txt"\n'
+    )
     agents = (repo / "AGENTS.md").read_text(encoding="utf-8")
     assert "<!-- indextool:begin" in agents and "`docs/architecture.md`" in agents
     settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
@@ -438,3 +445,121 @@ def test_the_git_add_line_never_lists_an_ignored_path(repo_factory, extra, args,
     assert tokens and ignored not in tokens
     assert any(ignored in ln for ln in printed_lines(result) if ln.startswith("  "))  # still reported as written
     git(repo, "add", *tokens)  # git refuses the whole command when it is given an ignored path
+
+
+def test_the_written_title_is_the_project_name_of_the_pyproject_when_there_is_one(repo_factory):
+    repo = repo_factory({**SRC_LAYOUT, "pyproject.toml": '[project]\nname = "ledger-service"\nversion = "1"\n'}, name="checkout")
+    assert run_cli(repo, "init").code == 0
+    written = (repo / "indextool.toml").read_text(encoding="utf-8").split("\n")
+    assert 'title = "ledger-service"' in written and not any("checkout" in ln for ln in written)
+    assert "# Architecture map: ledger-service" in (repo / "docs" / "architecture.md").read_text(encoding="utf-8")
+
+
+def test_the_written_title_is_the_folder_name_of_the_base_directory_without_a_pyproject_name(repo_factory):
+    repo = repo_factory({**SRC_LAYOUT, "pyproject.toml": "[tool.other]\nx = 1\n"}, name="orders-api")
+    result = run_cli(repo, "init")
+    assert result.code == 0, result.err
+    assert 'title = "orders-api"' in (repo / "indextool.toml").read_text(encoding="utf-8").split("\n")
+    assert "orders-api" not in result.out.replace("\r\n", "\n").split("\n")[0]  # the folder name is not printed by itself
+    assert "# Architecture map: orders-api" in (repo / "docs" / "architecture.md").read_text(encoding="utf-8")
+
+
+def test_the_written_title_is_a_toml_string_whatever_the_name_holds():
+    for name in ('say "hi"', "back\slash", "café", "tab\there"):
+        assert tomllib.loads(render_config(["."], name))["title"] == name
+    assert "title" not in tomllib.loads(render_config(["."], ""))
+
+
+def test_init_prints_the_two_commands_for_other_ci_systems(repo_factory):
+    repo = repo_factory(SRC_LAYOUT)
+    for args in ((), ("--dry-run",)):
+        lines = printed_lines(run_cli(repo, "init", *args))
+        at = lines.index("For other CI systems, run these two commands:")
+        assert lines[at + 1 : at + 3] == [f'  pip install "indextool~={FORMAT_VERSION}.0"', "  indextool verify"]
+
+
+def test_an_output_git_ignores_is_named_in_a_note_because_ci_cannot_verify_it(repo_factory):
+    repo = repo_factory({**SRC_LAYOUT, ".gitignore": "docs/\n"})
+    lines = printed_lines(run_cli(repo, "init"))
+    assert "note: docs/architecture.md is ignored by git; CI cannot verify it" in lines
+    assert "note: docs/architecture.index.txt is ignored by git; CI cannot verify it" in lines
+    plain = printed_lines(run_cli(repo_factory(SRC_LAYOUT, name="plain"), "init"))
+    assert not any("ignored by git" in ln for ln in plain)
+
+
+def test_the_note_about_ignored_files_is_for_the_outputs_only(repo_factory):
+    repo = repo_factory(SRC_LAYOUT)
+    lines = printed_lines(run_cli(repo, "init", "--hook", "local"))  # settings.local.json is ignored on purpose
+    assert not any("ignored by git" in ln for ln in lines)
+
+
+def two_sub_projects(repo_factory):
+    return repo_factory(
+        {
+            "a/indextool.toml": 'roots = ["."]\n',
+            "a/m.py": "x = 1\n",
+            "b/indextool.toml": 'roots = ["."]\n',
+            "b/m.py": "y = 2\n",
+        }
+    )
+
+
+def test_a_second_sub_project_is_told_that_the_shared_workflow_does_not_check_it(repo_factory):
+    repo = two_sub_projects(repo_factory)
+    workflow = repo / ".github" / "workflows" / "indextool.yml"
+    first = run_cli(repo / "a", "init")
+    assert first.code == 0, first.err
+    assert "working-directory: a" in workflow.read_text(encoding="utf-8")
+    assert "does not check" not in first.out  # it created the workflow, so it is covered
+    before = workflow.read_bytes()
+    second = run_cli(repo / "b", "init")
+    assert second.code == 0, second.err
+    assert workflow.read_bytes() == before  # never overwritten
+    lines = printed_lines(second)
+    assert any("exists; not overwritten" in ln for ln in lines)
+    at = lines.index("CI does not check this sub-project yet:")
+    assert "../.github/workflows/indextool.yml" in lines[at + 1] and "does not run indextool verify in b" in lines[at + 1]
+    assert lines[at + 3 : at + 5] == ["      - run: indextool verify", "        working-directory: b"]
+    again = printed_lines(run_cli(repo / "a", "init"))
+    assert not any("does not check" in ln or "working-directory" in ln for ln in again)
+
+
+def test_no_snippet_is_printed_once_the_shared_workflow_names_the_sub_project(repo_factory):
+    repo = two_sub_projects(repo_factory)
+    assert run_cli(repo / "a", "init").code == 0
+    workflow = repo / ".github" / "workflows" / "indextool.yml"
+    workflow.write_bytes(workflow.read_bytes() + b"      - run: indextool verify\n        working-directory: b   \n")
+    assert "does not check" not in run_cli(repo / "b", "init").out
+
+
+def test_a_project_at_the_top_of_the_repository_is_not_told_about_its_workflow(repo_factory):
+    repo = repo_factory({**SRC_LAYOUT, ".github/workflows/indextool.yml": "name: mine\n"})
+    result = run_cli(repo, "init")
+    assert "exists; not overwritten" in result.out and "does not check" not in result.out
+
+
+def test_init_takes_the_config_option_the_other_commands_take(repo_factory):
+    conf = 'roots = ["."]\narchitecture = "maps/arch.md"\nindex = "maps/idx.txt"\n'
+    repo = repo_factory({"conf/indextool.toml": conf, "conf/pkg/a.py": '"""A."""\n'})
+    result = run_cli(repo, "init", "--config", "conf/indextool.toml")
+    assert result.code == 0, result.err
+    assert not (repo / "indextool.toml").exists()  # no second config, and the one that exists is untouched
+    assert (repo / "conf" / "indextool.toml").read_bytes() == conf.encode("utf-8")
+    pointer = (repo / "conf" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "`maps/arch.md`" in pointer and "`maps/idx.txt`" in pointer and "docs/architecture" not in pointer
+    assert (repo / "conf" / "maps" / "arch.md").is_file() and not (repo / "conf" / "docs").exists()
+    assert "working-directory: conf" in (repo / ".github" / "workflows" / "indextool.yml").read_text(encoding="utf-8")
+    commit_all(repo, "adopt indextool")
+    verified = run_cli(repo, "verify", "--config", "conf/indextool.toml")
+    assert verified.code == 0, verified.out + verified.err
+    assert "no managed pointer block" not in verified.err
+    assert run_cli(repo, "verify", "--config", "conf/indextool.toml", "--source", "index").code == 0
+
+
+def test_init_dry_run_accepts_config_and_reports_a_missing_config_file_as_exit_2(repo_factory):
+    repo = repo_factory({**SRC_LAYOUT, "indextool.toml": 'title = "Mine"\nroots = ["src"]\n'})
+    dry = run_cli(repo, "init", "--config", "indextool.toml", "--dry-run")
+    assert dry.code == 0 and "dry run" in dry.out, dry.err
+    assert git(repo, "status", "--porcelain").strip() == ""
+    missing = run_cli(repo, "init", "--config", "nope.toml")
+    assert missing.code == 2 and "config file not found" in missing.err and "Traceback" not in missing.err

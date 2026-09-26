@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import FORMAT_VERSION, gitio
-from .config import CONFIG_NAME, load_config
+from .config import CONFIG_NAME, load_config, project_name
 from .errors import ConfigError
 from .output import normalize_newlines, write_atomic
 from .pipeline import sync_files
@@ -45,7 +46,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "@PY@"
-      - run: pip install "indextool~=@FMT@.0"
+      - run: @INSTALL@
 @VERIFY@"""
 
 
@@ -57,10 +58,22 @@ class Item:
 
 
 @dataclass(frozen=True)
+class CiGap:
+    """An existing workflow that does not run `indextool verify` in this sub-project."""
+
+    workflow: str  # relative to the base directory
+    workdir: str  # the sub-project's directory relative to the git top level
+    step: str  # the step to add to the workflow's job
+
+
+@dataclass(frozen=True)
 class InitResult:
     items: tuple[Item, ...]
     precommit: str
     base: Path | None = None
+    ci_commands: str = ""
+    ci_gap: CiGap | None = None
+    outputs: tuple[str, ...] = ()  # the generated files, relative to the base directory
 
 
 def detect_roots(base: Path) -> list[str]:
@@ -70,11 +83,24 @@ def detect_roots(base: Path) -> list[str]:
     return ["."]
 
 
-def render_config(roots: list[str]) -> str:
+def _toml_string(value: str) -> str:
+    """A TOML basic string: backslash, quote and control characters are escaped."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return '"' + "".join(f"\\u{ord(c):04x}" if ord(c) < 0x20 or ord(c) == 0x7F else c for c in escaped) + '"'
+
+
+def default_title(base: Path) -> str:
+    """The title written into a new config: `[project].name` of the base directory's pyproject.toml, else the name of
+    the folder. It is recorded once, in the committed config, so the output never depends on the folder afterwards."""
+    return project_name(base, "worktree") or base.name
+
+
+def render_config(roots: list[str], title: str = "") -> str:
     listed = ", ".join(f'"{r}"' for r in roots)
     return (
         "# indextool configuration. Every key is optional; see the indextool documentation for the full list.\n"
-        f"roots = [{listed}]\n"
+        + (f"title = {_toml_string(title)}\n" if title else "")
+        + f"roots = [{listed}]\n"
         'architecture = "docs/architecture.md"\n'
         'index = "docs/architecture.index.txt"\n'
     )
@@ -103,10 +129,35 @@ def merge_hook(text: str | None) -> tuple[str | None, str]:
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n", "changed"
 
 
+def install_command() -> str:
+    """The compatible-release pin: a patch release of indextool cannot change the output."""
+    return f'pip install "indextool~={FORMAT_VERSION}.0"'
+
+
+def verify_step(workdir: str) -> str:
+    return "      - run: indextool verify\n" + (f"        working-directory: {workdir}\n" if workdir else "")
+
+
+def ci_commands() -> str:
+    return "\n".join(["For other CI systems, run these two commands:", f"  {install_command()}", "  indextool verify"])
+
+
 def workflow_text(workdir: str) -> str:
     python = f"{sys.version_info.major}.{sys.version_info.minor}"
-    verify = "      - run: indextool verify\n" + (f"        working-directory: {workdir}\n" if workdir else "")
-    return _WORKFLOW.replace("@PY@", python).replace("@FMT@", FORMAT_VERSION).replace("@VERIFY@", verify)
+    return (
+        _WORKFLOW.replace("@PY@", python).replace("@INSTALL@", install_command()).replace("@VERIFY@", verify_step(workdir))
+    )
+
+
+def _checks(workflow: Path, workdir: str) -> bool:
+    """Whether the workflow has a `working-directory: <workdir>` line. A file that cannot be read gets the benefit of
+    the doubt: the message is only worth printing when it is certain."""
+    try:
+        text = normalize_newlines(workflow.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return True
+    line = re.compile(r"(?:-\s+)?working-directory:\s*[\"']?" + re.escape(workdir) + r"[\"']?\s*(?:#.*)?")
+    return any(line.fullmatch(ln.strip()) for ln in text.split("\n"))
 
 
 def _with_line(text: str | None, line: str) -> str | None:
@@ -141,8 +192,8 @@ def _real(path: Path) -> Path:
         return path
 
 
-def run(start: Path, *, dry_run: bool = False, hook: str = "shared") -> InitResult:
-    cfg = load_config(start)
+def run(start: Path, *, dry_run: bool = False, hook: str = "shared", config: Path | None = None) -> InitResult:
+    cfg = load_config(start, config)
     base = cfg.base
     top = gitio.top_level(base) or base
     items: list[Item] = []
@@ -174,7 +225,7 @@ def run(start: Path, *, dry_run: bool = False, hook: str = "shared") -> InitResu
     if cfg.config_file is not None:
         items.append(Item(_rel(cfg.config_file, base), "skipped", "configuration already present"))
     else:
-        stage(base / CONFIG_NAME, render_config(detect_roots(base)))
+        stage(base / CONFIG_NAME, render_config(detect_roots(base), default_title(base)))
 
     block = render_block(cfg)
     placement = targets(base)
@@ -212,10 +263,13 @@ def run(start: Path, *, dry_run: bool = False, hook: str = "shared") -> InitResu
                 stage(ignore, _with_line(listed[0], LOCAL_SETTINGS), listed[1])
 
     workflow = top / ".github" / "workflows" / "indextool.yml"
+    workdir = "" if base == top else base.relative_to(top).as_posix()
+    ci_gap = None
     if workflow.exists():
         items.append(Item(_rel(workflow, base), "skipped", "exists; not overwritten"))
+        if workdir and not _checks(workflow, workdir):
+            ci_gap = CiGap(_rel(workflow, base), workdir, verify_step(workdir))
     else:
-        workdir = "" if base == top else base.relative_to(top).as_posix()
         stage(workflow, workflow_text(workdir))
 
     attributes = base / ".gitattributes"
@@ -227,15 +281,25 @@ def run(start: Path, *, dry_run: bool = False, hook: str = "shared") -> InitResu
             updated = _with_line(updated, f"{out} text eol=lf") or updated
         stage(attributes, None if updated == original else updated, crlf)
 
+    outputs = (cfg.architecture, cfg.index)
     if not dry_run:
         for real, (rel, text) in writes.items():
             try:
                 write_atomic(real, text)
             except OSError as exc:
                 raise ConfigError(f"cannot write {rel}: {exc}") from exc
-        for rel, action, _size in sync_files(load_config(base), "worktree"):
+        final = load_config(base, cfg.config_file)  # the config as written, when there was none before
+        for rel, action, _size in sync_files(final, "worktree"):
             items.append(Item(rel, action, "generated"))
+        outputs = (final.architecture, final.index)
     else:
         items.append(Item(cfg.architecture, "planned", "generated after setup"))
         items.append(Item(cfg.index, "planned", "generated after setup"))
-    return InitResult(items=tuple(items), precommit=PRECOMMIT_SNIPPET, base=base)
+    return InitResult(
+        items=tuple(items),
+        precommit=PRECOMMIT_SNIPPET,
+        base=base,
+        ci_commands=ci_commands(),
+        ci_gap=ci_gap,
+        outputs=outputs,
+    )

@@ -17,6 +17,7 @@ TABLES_TOKEN = "@TABLES@"
 IO_KINDS = ("db", "network", "http")
 SQL_KEYS = ("create", "use", "write", "write_any")
 _TOP_KEYS = frozenset({"title", "roots", "exclude", "tests", "architecture", "index", "discovery", "routes", "io", "sql"})
+_CONFIG_FILE_NAMES = frozenset({CONFIG_NAME, "pyproject.toml"})
 _DOTTED = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\Z")
 
 DEFAULT_TESTS = ("test_*.py", "*_test.py", "tests/", "test/")
@@ -111,7 +112,8 @@ def _locate(start: Path, source: str) -> tuple[Path | None, Path]:
     return None, (top or start)
 
 
-def _project_name(base: Path, source: str) -> str | None:
+def project_name(base: Path, source: str) -> str | None:
+    """`[project].name` of the pyproject.toml in `base`, or None."""
     data = _parse_toml(read_file(base, "pyproject.toml", source))
     project = data.get("project") if data else None
     name = project.get("name") if isinstance(project, dict) else None
@@ -139,6 +141,13 @@ def _rel_path(value: object, where: str, allow_dot: bool) -> str:
     if p.startswith("/") or (len(p) > 1 and p[1] == ":") or ".." in parts:
         raise ConfigError(f"{where}: {value!r} must be a relative path inside the repository")
     return "/".join(parts)
+
+
+def _check_output_path(key: str, path: str) -> None:
+    """An output is rewritten by every `generate` and `refresh`, so it must not be a source or config file."""
+    name = path.rsplit("/", 1)[-1].casefold()
+    if name.endswith(".py") or name in _CONFIG_FILE_NAMES:
+        raise ConfigError(f"{key}: {path!r} would overwrite a source or config file; name a generated file instead")
 
 
 def _check_roots(roots: tuple[str, ...]) -> None:
@@ -233,7 +242,7 @@ def load_config(start: Path, explicit: Path | None = None, source: str = "worktr
         config_file, base = _locate(start, source)
 
     table: dict = {}
-    project_name: str | None = None
+    named: str | None = None
     where = "config"
     untracked = False
     if config_file is not None:
@@ -254,13 +263,13 @@ def load_config(start: Path, explicit: Path | None = None, source: str = "worktr
             table = tool.get("indextool", {})
             where = "[tool.indextool]"
             name = project.get("name")
-            project_name = name if isinstance(name, str) else None
+            named = name if isinstance(name, str) else None
         else:
             table, where = data, rel
         if gitio.in_work_tree(base):
             untracked = not gitio.is_tracked(base, rel)
-    if project_name is None:
-        project_name = _project_name(base, source)
+    if named is None:
+        named = project_name(base, source)
 
     table = _known_keys(table, _TOP_KEYS, where)
     title = table.get("title", "")
@@ -274,6 +283,8 @@ def load_config(start: Path, explicit: Path | None = None, source: str = "worktr
     index = _rel_path(table.get("index", DEFAULT_INDEX), "index", allow_dot=False)
     if architecture == index:
         raise ConfigError("architecture and index must be different files")
+    _check_output_path("architecture", architecture)
+    _check_output_path("index", index)
     discovery = table.get("discovery", "auto")
     if discovery not in ("auto", "git", "walk"):
         raise ConfigError("discovery: expected one of 'auto', 'git', 'walk'")
@@ -282,7 +293,7 @@ def load_config(start: Path, explicit: Path | None = None, source: str = "worktr
         base=base,
         config_file=config_file,
         config_untracked=untracked,
-        title=title or (project_name or ""),
+        title=title or (named or ""),
         roots=roots,
         exclude=_globs(_string_list(table.get("exclude", []), "exclude"), "exclude"),
         tests=_globs(_string_list(table.get("tests", list(DEFAULT_TESTS)), "tests"), "tests"),

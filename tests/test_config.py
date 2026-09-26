@@ -237,3 +237,28 @@ def test_source_index_locates_indextool_toml_from_the_index_too(repo_factory):
     (repo2 / "indextool.toml").write_text('title = "New"\n', encoding="utf-8", newline="\n")  # never staged
     assert load_config(repo2, source="index").config_file is None
     assert load_config(repo2, source="worktree").title == "New"
+
+
+@pytest.mark.parametrize(
+    "text,key,name",
+    [
+        ("architecture = 'src/app.py'\n", "architecture", "src/app.py"),
+        ("index = 'setup.py'\n", "index", "setup.py"),
+        ("index = 'tools/gen.PY'\n", "index", "tools/gen.PY"),
+        ("architecture = 'docs/indextool.toml'\n", "architecture", "docs/indextool.toml"),
+        ("index = 'Indextool.TOML'\n", "index", "Indextool.TOML"),
+        ("architecture = 'pyproject.toml'\n", "architecture", "pyproject.toml"),
+        ('index = "sub\\\\PyProject.Toml"\n', "index", "sub/PyProject.Toml"),
+    ],
+)
+def test_an_output_path_that_would_overwrite_a_source_or_config_file_is_refused(tmp_path, text, key, name):
+    with pytest.raises(ConfigError) as caught:
+        make_config(tmp_path, text)
+    message = str(caught.value)
+    assert message.startswith(f"{key}: ") and repr(name) in message and "would overwrite" in message
+    assert "\n" not in message
+
+
+@pytest.mark.parametrize("path", ["docs/map.md", "docs/architecture.py.txt", "docs/indextool.toml.md", "docs/pyproject.toml.bak"])
+def test_other_output_paths_are_accepted(tmp_path, path):
+    assert make_config(tmp_path, f"architecture = {path!r}\n").architecture == path
