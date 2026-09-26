@@ -1,3 +1,5 @@
+import pytest
+
 from indextool.decode import decode_source
 
 
@@ -28,3 +30,9 @@ def test_invalid_utf8_after_the_first_two_lines_is_replaced_not_fatal():
     text, ok = decode_source(b"a = 1\nb = 2\nc = '\xe9'\n")
     assert ok is True
     assert "�" in text
+
+
+@pytest.mark.parametrize("name", ["rot13", "base64", "hex", "zlib", "undefined", "idna"])
+def test_non_text_codec_cookies_are_not_ok_and_never_raise(name):
+    source = f"# coding: {name}\nx = 1\n"
+    assert decode_source(source.encode("ascii")) == (source, False)
