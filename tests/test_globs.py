@@ -43,6 +43,12 @@ def test_bad_patterns_are_config_errors(bad):
         GlobSet([bad])
 
 
+@pytest.mark.parametrize("bad", ["[z-a]*.py", "[a&&b]", "[[]x", "[a--b]"])
+def test_invalid_character_classes_are_config_errors(bad):
+    with pytest.raises(ConfigError):
+        GlobSet([bad])
+
+
 def test_backslashes_are_separators():
     assert GlobSet(["legacy\\old\\"]).matches("legacy/old/a.py")
 

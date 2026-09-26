@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -71,7 +72,13 @@ def _compile(pattern: str) -> _Rule:
     if not p:
         raise ConfigError(f"glob {pattern!r}: the pattern names nothing")
     basename_only = "/" not in p and not anchored
-    return _Rule(re.compile(_translate(p)), dir_only, basename_only)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            regex = re.compile(_translate(p))
+    except (re.error, FutureWarning) as exc:
+        raise ConfigError(f"glob {pattern!r}: {exc}") from exc
+    return _Rule(regex, dir_only, basename_only)
 
 
 class GlobSet:
