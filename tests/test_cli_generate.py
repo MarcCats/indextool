@@ -10,7 +10,9 @@ def test_generate_writes_both_files_and_reports(repo_factory):
     arch = (repo / "docs" / "architecture.md").read_bytes()
     assert arch.startswith(b"# Architecture map") and arch.endswith(b"\n") and not arch.endswith(b"\n\n")
     assert b"\r" not in arch
-    assert (repo / "docs" / "architecture.index.txt").read_text(encoding="utf-8").startswith("# indextool ")
+    index = (repo / "docs" / "architecture.index.txt").read_bytes()
+    assert index.startswith(b"# indextool ") and index.endswith(b"\n") and not index.endswith(b"\n\n")
+    assert b"\r" not in index
 
 
 def test_generate_twice_is_byte_identical_and_reports_unchanged(repo_factory):
@@ -43,11 +45,14 @@ def test_a_repository_with_no_commits_uses_staged_files(repo_factory):
 
 
 def test_non_ascii_names_are_written_as_utf8_and_survive_a_narrow_console(repo_factory):
-    repo = repo_factory({"café/naïve.py": '"""Crème brûlée."""\n'})
+    # the paths are printed, so a console that cannot encode them would fail the command
+    toml = 'architecture = "café/map.md"\nindex = "café/index.txt"\n'
+    repo = repo_factory({"café/naïve.py": '"""Crème brûlée."""\n', "indextool.toml": toml})
     result = run_cli(repo, "generate", env={"PYTHONIOENCODING": "ascii"})
     assert result.code == 0, result.err
-    index = (repo / "docs" / "architecture.index.txt").read_text(encoding="utf-8")
-    assert "café.naïve | Crème brûlée. | standalone" in index
+    assert "wrote café/map.md" in result.out and "wrote café/index.txt" in result.out
+    assert "café.naïve | Crème brûlée. | standalone" in (repo / "café" / "index.txt").read_text(encoding="utf-8")
+    assert (repo / "café" / "map.md").read_bytes().startswith(b"# Architecture map")
 
 
 def test_generate_warns_about_an_untracked_config(repo_factory):

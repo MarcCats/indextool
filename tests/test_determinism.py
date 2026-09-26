@@ -27,10 +27,10 @@ def test_the_same_repository_generated_twice_is_identical(repo_factory):
     assert regenerate(repo) == regenerate(repo)
 
 
-@pytest.mark.parametrize("seed", ["0", "1", "4242"])
+@pytest.mark.parametrize("seed", ["1", "2", "3", "4", "5", "6", "7", "8"])
 def test_hash_seed_does_not_matter(repo_factory, seed):
     repo = repo_factory(PORTABLE)
-    baseline = regenerate(repo, env={"PYTHONHASHSEED": "random"})
+    baseline = regenerate(repo, env={"PYTHONHASHSEED": "0"})  # fixed seeds on both sides: the same run every time
     assert regenerate(repo, env={"PYTHONHASHSEED": seed}) == baseline
 
 
@@ -50,7 +50,13 @@ def test_crlf_sources_produce_identical_output(repo_factory):
 
 @pytest.mark.parametrize(
     "env",
-    [{"LC_ALL": "C"}, {"LC_ALL": "C", "PYTHONUTF8": "0"}, {"PYTHONUTF8": "1"}, {"PYTHONUTF8": "0", "PYTHONIOENCODING": "ascii"}],
+    [
+        # a real C locale on POSIX: Python would otherwise coerce it to a UTF-8 one, and PYTHONUTF8 must not be set
+        {"LC_ALL": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": None},
+        {"LC_ALL": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": "0"},
+        {"PYTHONUTF8": "1"},
+        {"PYTHONUTF8": "0", "PYTHONIOENCODING": "ascii"},
+    ],
 )
 def test_locale_and_utf8_mode_do_not_matter_and_the_latin1_cookie_is_honoured(repo_factory, env):
     repo = repo_factory({**PORTABLE, **LATIN1})

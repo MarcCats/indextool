@@ -12,6 +12,13 @@ def _lf(data: bytes) -> bytes:
     return data.replace(b"\r\n", b"\n")
 
 
+def test_no_committed_golden_contains_a_carriage_return():
+    goldens = sorted(GOLDEN.glob("*"))
+    assert goldens
+    for path in goldens:
+        assert b"\r" not in path.read_bytes(), path.name  # the comparison below normalises; the files themselves may not need it
+
+
 @pytest.mark.parametrize(
     "golden,rel",
     [("portable.architecture.md", "docs/architecture.md"), ("portable.index.txt", "docs/architecture.index.txt")],
