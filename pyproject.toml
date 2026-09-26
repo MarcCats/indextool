@@ -21,6 +21,12 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
+[project.urls]
+Homepage = "https://github.com/MarcCats/indextool"
+Repository = "https://github.com/MarcCats/indextool"
+Issues = "https://github.com/MarcCats/indextool/issues"
+Changelog = "https://github.com/MarcCats/indextool/blob/main/CHANGELOG.md"
+
 [project.scripts]
 indextool = "indextool.cli:main"
 
