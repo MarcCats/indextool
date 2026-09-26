@@ -195,14 +195,17 @@ def render_architecture(mods: dict[str, Module], facts: Facts, cfg: Config, excl
         out.append("")
 
     decorators = ", ".join(f"`{d}`" for d in cfg.route_decorators) or "(none configured)"
+    if cfg.sql.is_default:
+        tables_gap = "- Tables that no `CREATE TABLE` statement in a string literal creates"
+    else:
+        tables_gap = "- Tables that the configured `[sql] create` patterns do not match"
     out += [
         "## What this map cannot say",
         "- Why a module exists or how modules cooperate beyond importing each other: titles are the first line of each "
         "docstring.",
         "- Formulas, thresholds, ordering of the data flow, and the reasons behind design rules.",
         "- Imports made through `importlib`, `exec` or `sys.path` changes, and anything outside Python source files.",
-        "- Tables that no `CREATE TABLE` statement in a string literal creates (created outside the code, by an ORM, or "
-        "under a name built at run time).",
+        f"{tables_gap} (created outside the code, by an ORM, or under a name built at run time).",
         f"- Routes not registered by a decorator named {decorators} with a literal path starting with `/`.",
     ]
     return "\n".join(out)

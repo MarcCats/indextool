@@ -106,8 +106,17 @@ def test_detector_lines_and_cannot_say_reflect_the_config(tmp_path):
     default, _ = render_pair(tmp_path / "b", SHOP)
     assert "`.route(...)`, `.get(...)`" in default
     assert "Detector: `CREATE TABLE` statements" in default
+    assert (
+        "- Tables that no `CREATE TABLE` statement in a string literal creates "
+        "(created outside the code, by an ORM, or under a name built at run time)."
+    ) in default.split("\n")
     custom_sql, _ = render_pair(tmp_path / "c", SHOP, "[sql]\ncreate = ['CREATE TABLE (\\w+)']\n")
     assert "Detector: custom SQL patterns from the configuration" in custom_sql
+    assert (
+        "- Tables that the configured `[sql] create` patterns do not match "
+        "(created outside the code, by an ORM, or under a name built at run time)."
+    ) in custom_sql.split("\n")
+    assert "no `CREATE TABLE` statement" not in custom_sql
 
 
 def test_counts_of_excluded_and_unparsable_files_are_printed(tmp_path):
