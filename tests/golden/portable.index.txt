@@ -1,0 +1,10 @@
+# indextool 0.1 index, one line per module, fields split by a pipe: key, first docstring line, role, tables, routes. Role: `lib` (another module imports it) or `standalone` (nothing does), then the io the code shows. Tables ending in * are ones the module writes.
+scripts.report | Print a report. | standalone
+shop | Shop package. | lib
+shop.broken | - | standalone
+shop.cafe | Crème brûlée café. | standalone network
+shop.cycle_a | - | lib
+shop.cycle_b | - | lib
+shop.ledger | Ledger of money movements. | lib db-rw | tables: ledger*
+shop.orders | Order handling. | lib db-rw | tables: orders*
+shop.web | HTTP routes. | standalone http | routes 2
