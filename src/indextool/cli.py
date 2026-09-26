@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from . import __version__, gitio
+from . import init as init_command
 from .config import load_config
 from .errors import ConfigError
 from .output import changed_lines, compare, expected_text, read_committed
@@ -112,6 +113,25 @@ def _refresh(args: argparse.Namespace) -> int:
     return 0
 
 
+def _init(args: argparse.Namespace) -> int:
+    try:
+        result = init_command.run(Path.cwd(), dry_run=args.dry_run, hook=args.hook)
+    except (ConfigError, gitio.GitError) as exc:
+        _warn(str(exc))
+        return 2
+    for item in result.items:
+        print(f"  {item.action:<10} {item.rel}" + (f"  ({item.note})" if item.note else ""))
+    if args.dry_run:
+        print("(dry run: nothing was written)")
+    else:
+        written = [i.rel for i in result.items if i.action in ("created", "updated")]
+        if written:
+            print("git add " + " ".join(written))
+    print()
+    print(result.precommit)
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
@@ -130,6 +150,14 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("generate", parents=[common], help="write the architecture map and the module index")
     sub.add_parser("verify", parents=[common], help="fail when the committed files are stale (exit 1) or misconfigured (exit 2)")
     sub.add_parser("refresh", parents=[common], help="silent, fail-open regeneration for a session-start hook")
+    init_parser = sub.add_parser("init", help="add config, pointer, hook, CI workflow and .gitattributes; then generate")
+    init_parser.add_argument("--dry-run", action="store_true", help="show what would change and write nothing")
+    init_parser.add_argument(
+        "--hook",
+        choices=("shared", "local", "none"),
+        default="shared",
+        help="where to put the SessionStart hook: .claude/settings.json (shared, default), settings.local.json, or nowhere",
+    )
     return parser
 
 
@@ -146,4 +174,4 @@ def main(argv: list[str] | None = None) -> int:
         if given[:1] == ["refresh"]:
             return 0  # even a bad argument must not fail a session
         raise
-    return {"generate": _generate, "verify": _verify, "refresh": _refresh}[args.command](args)
+    return {"generate": _generate, "verify": _verify, "refresh": _refresh, "init": _init}[args.command](args)

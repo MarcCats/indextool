@@ -1,7 +1,17 @@
 import pytest
 
 from indextool.errors import ConfigError
-from indextool.pointer import BEGIN, CANDIDATES, END, check_pointers, imports_agents, render_block, targets, upsert
+from indextool.pointer import (
+    BEGIN,
+    CANDIDATES,
+    END,
+    check_pointers,
+    has_block,
+    imports_agents,
+    render_block,
+    targets,
+    upsert,
+)
 from tests.fixture_repos import TINY
 from tests.helpers import commit_all, make_config, run_cli, write_files
 
@@ -215,3 +225,18 @@ def test_verify_exits_2_on_an_unpaired_marker_and_leaves_the_file_alone(repo_fac
     assert "AGENTS.md: unpaired indextool marker at line 3" in result.out
     assert "no managed pointer block" not in result.err
     assert (repo / "AGENTS.md").read_bytes() == original.encode("utf-8")
+
+
+def test_has_block_uses_the_same_scanner_and_never_raises(tmp_path):
+    block = render_block(make_config(tmp_path))
+    assert has_block(f"# Notes\n\n{block}\n")
+    assert not has_block("# Notes\n\nplain text\n")
+    assert not has_block("")
+    assert not has_block(f"```\n{block}\n```\n")  # a fenced example is not a block
+    assert not has_block("The block runs from `<!-- indextool:begin -->` to `<!-- indextool:end -->`.\n")
+    assert not has_block("text\n\n```\nunclosed fence\n")
+    assert has_block(f"```\n{block}\n```\n\n{block}\n")  # a real block after a fenced example
+    # An unpaired marker counts as a block, so that upsert then raises instead of appending a second block.
+    assert has_block(f"# Notes\n\n{BEGIN}\nUSER CONTENT\n")
+    assert has_block(f"# Notes\n\n{END}\n")
+    assert has_block(block + "\n\n" + block + "\n")

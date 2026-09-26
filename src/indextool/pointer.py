@@ -95,6 +95,16 @@ def upsert(text: str, block: str) -> tuple[str, bool]:
     return text.rstrip("\n") + "\n\n" + block + "\n", True
 
 
+def has_block(text: str) -> bool:
+    """Whether the text holds a managed block. Unpaired or repeated markers count as one, so that a caller goes on to
+    upsert, which raises, instead of adding a second block next to them."""
+    try:
+        span, _unclosed = _scan(text)
+    except ConfigError:
+        return True
+    return span is not None
+
+
 def imports_agents(text: str) -> bool:
     return any(line.strip() == "@AGENTS.md" for line in text.split("\n"))
 
