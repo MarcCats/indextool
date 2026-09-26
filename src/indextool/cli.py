@@ -10,6 +10,7 @@ from .config import load_config
 from .errors import ConfigError
 from .output import changed_lines, compare, expected_text, read_committed
 from .pipeline import build, sync_files
+from .pointer import CANDIDATES, check_pointers
 
 
 def _warn(message: str) -> None:
@@ -40,6 +41,7 @@ def _warn_unstaged(cfg, built, source: str) -> None:
     if source != "worktree" or not gitio.in_work_tree(cfg.base):
         return
     watched = set(built.py_files)
+    watched.update(CANDIDATES)
     if cfg.config_file is not None:
         watched.add(cfg.config_file.name)
     touched = sorted(gitio.unstaged(cfg.base) & watched)
@@ -85,6 +87,13 @@ def _verify(args: argparse.Namespace) -> int:
                 f"{built.unparsable} file(s) failed to parse under Python {python}; "
                 "check that CI and local Python versions match."
             )
+    problems, found = check_pointers(cfg, args.source)
+    for problem in problems:
+        print(f"indextool: {problem}")
+    if not found:
+        _warn("no managed pointer block found in CLAUDE.md, .claude/CLAUDE.md or AGENTS.md; run indextool init to add one")
+    if problems:
+        return 2
     return 1 if drift else 0
 
 
