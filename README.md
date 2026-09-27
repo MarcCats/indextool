@@ -38,6 +38,11 @@ again refreshes the managed blocks it finds, keeps CRLF files CRLF, writes throu
 to your current directory. Markers inside fenced code and prose mentions of them are ignored; unpaired or duplicate
 markers are refused, and `verify` exits 2 on them.
 
+`AGENTS.md` is a cross-vendor convention, not a Claude-specific one: OpenAI's Codex CLI reads it the same way Claude
+Code does, so the pointer block reaches it without any Codex-specific code in indextool. The one Claude-specific piece
+is the SessionStart hook `init` can add to `.claude/settings.json`; Codex CLI has no equivalent hook file for indextool
+to write, so a Codex CLI user runs `indextool refresh` by hand, or wires it into their own workflow.
+
 ## Commands
 
 | Command | What it does |
